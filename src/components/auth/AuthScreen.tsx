@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import {
   ShieldCheck,
@@ -6,12 +6,11 @@ import {
   Lock,
   User,
   Building2,
-  BadgeCheck,
   AlertCircle,
   ArrowRight,
   RefreshCw,
-  KeyRound,
   CheckCircle2,
+  Clock,
 } from 'lucide-react';
 
 export const AuthScreen: React.FC = () => {
@@ -20,10 +19,8 @@ export const AuthScreen: React.FC = () => {
     signUp,
     resetPassword,
     resendConfirmationEmail,
-    confirmEmailManually,
     emailConfirmationPending,
     clearEmailConfirmationPending,
-    isSupabaseLive,
   } = useAuth();
 
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
@@ -37,6 +34,16 @@ export const AuthScreen: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [resending, setResending] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
+
+  // Active timer for resend rate limit cooldown
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setCooldownSeconds((prev) => (prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldownSeconds]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,22 +61,26 @@ export const AuthScreen: React.FC = () => {
         const res = await signUp({
           email,
           password,
-          fullName: fullName || email.split('@')[0],
-          role,
-          organization,
-          badgeNumber: badgeNumber || `CPWD-${Math.floor(1000 + Math.random() * 9000)}`,
+          fullName: fullName.trim() || email.split('@')[0],
+          role: role.trim(),
+          organization: organization.trim(),
+          badgeNumber: badgeNumber.trim() || `CPWD-${Math.floor(1000 + Math.random() * 9000)}`,
         });
         if (res.error) {
           setError(res.error);
         } else if (res.requireEmailConfirmation) {
-          setSuccessMsg('Confirmation link has been dispatched to your email address.');
+          setSuccessMsg(
+            res.message || 'Account created. Please check your email and confirm your account before signing in.'
+          );
+        } else if (res.message) {
+          setSuccessMsg(res.message);
         }
       } else if (mode === 'forgot') {
         const res = await resetPassword(email);
         if (res.error) {
           setError(res.error);
         } else {
-          setSuccessMsg(res.message || 'Password reset instructions have been dispatched.');
+          setSuccessMsg(res.message || 'Password reset instructions have been dispatched to your email.');
         }
       }
     } catch (err: any) {
@@ -81,13 +92,25 @@ export const AuthScreen: React.FC = () => {
 
   const handleResend = async () => {
     const targetEmail = emailConfirmationPending || email;
-    if (!targetEmail) return;
+    if (!targetEmail || cooldownSeconds > 0) return;
     setResending(true);
     setError(null);
     try {
       const res = await resendConfirmationEmail(targetEmail);
-      if (res.error) setError(res.error);
-      else setSuccessMsg(res.message || 'Verification link re-sent successfully.');
+      if (res.error) {
+        // Parse Supabase rate-limiting string if present (e.g. "...after 26 seconds")
+        const secMatch = res.error.match(/(\d+)\s*seconds?/i);
+        if (secMatch) {
+          const secs = parseInt(secMatch[1], 10);
+          setCooldownSeconds(secs);
+          setError(`Security cooldown active. You can request another verification email in ${secs}s.`);
+        } else {
+          setError(res.error);
+        }
+      } else {
+        setCooldownSeconds(60);
+        setSuccessMsg(res.message || 'Verification email resent successfully. Please check your inbox.');
+      }
     } finally {
       setResending(false);
     }
@@ -125,12 +148,13 @@ export const AuthScreen: React.FC = () => {
             <div>
               <h2 className="text-lg font-bold text-slate-900">Confirm Your Email Address</h2>
               <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                We sent a verification link to <strong className="text-slate-900 font-mono">{emailConfirmationPending}</strong>. Please confirm your email address to access the inspection dashboard.
+                Account created. A verification link has been dispatched to{' '}
+                <strong className="text-slate-900 font-mono">{emailConfirmationPending}</strong>. Please check your email and confirm your account before signing in.
               </p>
             </div>
 
             {successMsg && (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2 text-left">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span>{successMsg}</span>
               </div>
@@ -146,12 +170,26 @@ export const AuthScreen: React.FC = () => {
             <div className="space-y-2 pt-2">
               <button
                 type="button"
-                disabled={resending}
+                disabled={resending || cooldownSeconds > 0}
                 onClick={handleResend}
-                className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {resending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-                <span>Resend Confirmation Email</span>
+                {resending ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Resending...</span>
+                  </>
+                ) : cooldownSeconds > 0 ? (
+                  <>
+                    <Clock className="w-4 h-4 text-blue-200" />
+                    <span>Resend available in {cooldownSeconds}s</span>
+                  </>
+                ) : (
+                  <>
+                    <Mail className="w-4 h-4" />
+                    <span>Resend Confirmation Email</span>
+                  </>
+                )}
               </button>
 
               <button

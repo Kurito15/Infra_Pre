@@ -113,85 +113,108 @@ export interface TelemetryRecord {
   createdAt?: string;
 }
 
+export interface DefectRemediationDetail {
+  detectedDefect: string;
+  severity: string;
+  confidence: number;
+  location: string;
+  measurements: string;
+  likelyContributingFactors: string[];
+  recommendedCorrectiveAction: string;
+  recommendedPreventiveAction: string;
+  inspectionPriority: string;
+}
+
+export interface RecommendedRemediationSection {
+  immediateActions: string[];
+  recommendedRepairs: string[];
+  preventiveMeasures: string[];
+  professionalInspectionRequirements: string[];
+}
+
 export interface GeneratedForensicReport {
-  id: string;
+  id?: string;
+  success?: boolean;
   userId?: string;
-  inspectionId: string;
-  buildingId: string;
-  reportNumber: string;
-  title: string;
-  auditStandard: string;
-  provider: string; // "Gemini 3.7 Flash" or "Deterministic Civil Heuristics Engine"
-  isFallback: boolean;
+  inspectionId?: string;
+  buildingId?: string;
+  reportId?: string;
+  reportNumber?: string;
+  title?: string;
+  auditStandard?: string;
+  provider: string;
+  isFallback?: boolean;
   generatedAt: string;
 
-  // Explicit Required Report Sections
-  buildingInformation: {
+  buildingInfo?: {
     name: string;
     code: string;
     type: string;
     location: string;
     yearBuilt: number;
+    floors: string;
     structuralSystem: string;
-    totalFloorsOrSpans: string;
-    ownerOrAgency: string;
+    owner: string;
+    buildingUse?: string;
   };
-  inspectionSummary: {
-    inspectionCode: string;
+  inspectionSummary?: {
+    certificateId: string;
     auditDate: string;
-    auditorName: string;
-    auditorBadge: string;
-    inspectedElement: string;
-    locationDetails: string;
-    structuralHealthIndex: number;
-    riskScore: number;
-    overallRiskLevel: RiskLevel;
-  };
-  detectedDefectsSummary: {
-    totalCount: number;
-    coveragePercent: number;
-    defectsList: Array<{
-      type: string;
-      severity: SeverityLevel;
-      confidence: number;
-      estimatedLengthMm: number;
-      estimatedWidthMm: number;
-      coveragePercent: number;
-      technicalDescription: string;
-      standardsReference: string;
-      remediationProtocol: string;
-    }>;
-  };
-  aiAssessment: string;
-  structuralRisk: {
-    riskRating: RiskLevel;
+    inspector: string;
+    inspectorBadge: string;
+    inspectorDesignation: string;
+    element: string;
+    locationDetails?: string;
     healthIndex: number;
     riskScore: number;
-    loadBearingCapacityImpact: string;
-    serviceabilityStatus: string;
-    riskEvaluationNarrative: string;
+    overallRiskLevel: string;
+    defectCount: number;
+    totalCoveragePercent?: number;
   };
-  sensorObservations: {
-    activeSensorsCount: number;
-    observationsNarrative: string;
-    readings: Array<{
-      sensorId: string;
-      metricType: string;
-      readingValue: number;
-      unit: string;
-      status: 'Normal' | 'Warning' | 'Critical';
-      elementCode: string;
+  environmentalTelemetry?: {
+    temperature: string;
+    humidity: string;
+    vibration: string;
+    crackDisplacement?: string;
+    strain?: string;
+    telemetryNotes: string;
+    sensorReadings: Array<{
+      sensor: string;
+      value: string;
+      status: string;
     }>;
   };
-  recommendedActions: {
-    immediateActions: string[]; // 24-48 hours
-    shortTermActions: string[]; // 7-14 days
-    longTermMonitoring: string[]; // 30-90 days
+  detectedDefects?: Array<{
+    type: string;
+    severity: string;
+    confidence: number;
+    crackWidthMm: number;
+    crackLengthMm: number;
+    coveragePercent: number;
+    compliance: string;
+    remediation: string;
+  }>;
+  defectRemediations?: DefectRemediationDetail[];
+  aiAssessment: string;
+  structuralRisk?: {
+    riskLevel: string;
+    riskScore: number;
+    failureModes: string[];
+    criticalityAnalysis: string;
   };
-  priority: string; // "CRITICAL / IMMEDIATE (24-48 Hours)" | "HIGH / SCHEDULED (7-14 Days)" | "MODERATE / ROUTINE (30-90 Days)" | "LOW / ANNUAL (Routine)"
+  sensorObservations?: string;
+  recommendedRemediation?: RecommendedRemediationSection;
+  recommendedActions?: string[];
+  priority?: {
+    level: string;
+    timeframe: string;
+    urgencyText: string;
+  };
   disclaimer: string;
+  fullMarkdownReport?: string;
   rawMarkdown?: string;
 }
+
 
 export interface AuditReport {
   id: string;

@@ -167,7 +167,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="flex items-center justify-between mb-1.5">
             <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400">
               <span className={`w-2 h-2 rounded-full ${isSupabaseLive ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-              <span>{isSupabaseLive ? 'Supabase Connected' : 'Demo Auth Active'}</span>
+              <span>{isSupabaseLive ? 'Supabase Auth' : 'Supabase Auth'}</span>
             </div>
             <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
           </div>

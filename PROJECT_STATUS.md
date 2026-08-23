@@ -9,13 +9,24 @@
 ## 1. Production Build & Vercel Deployment Status
 
 - **Build Status:** ✅ Production build (`npm run build`) compiles cleanly without TypeScript errors or missing modules.
-- **Vercel Serverless Architecture:** All backend API handlers in `/api/*.ts` are designed to execute seamlessly both as Vercel serverless Node.js functions and within the unified Express container environment.
+- **Vercel Serverless Architecture:** All backend API handlers in `/api/*.ts` execute seamlessly as Vercel serverless Node.js functions.
 - **Vercel Configuration (`vercel.json`):** Configured with `"buildCommand": "vite build"`, `"outputDirectory": "dist"`, and API route rewrites to `/api/$1` and SPA fallback to `/index.html`.
 - **Zero Localhost Hardcoding:** All frontend data fetching and inference workflows utilize relative paths (e.g. `/api/analyze`, `/api/generate-report`, `/api/telemetry`, `/api/roboflow/test`).
 
 ---
 
-## 2. API Routes Specification
+## 2. Authentication System (Strict Supabase Auth Only)
+
+- **Supabase-Only Verification:** `MockAuth`, `MockUserSession`, and localStorage authentication fallbacks have been completely excised.
+- **Strict Access Control:** Unauthenticated users are strictly barred from all dashboard routes and redirected directly to the Sign In / Sign Up portal (`AuthScreen`).
+- **Session Lifecycle:** App startup invokes `supabase.auth.getSession()`. Real-time session synchronization is driven by `supabase.auth.onAuthStateChange()`.
+- **User Creation:** User signups go through `supabase.auth.signUp()` with metadata stored in `user_metadata` (`full_name`, `role`, `organization`, `badge_number`), registering in Supabase Auth Users.
+- **Email Verification:** Supports Supabase email confirmation flows and real email resend via `supabase.auth.resend({ type: 'signup', email })`.
+- **Sign Out:** `supabase.auth.signOut()` clears the session and instantly returns to the unauthenticated login portal.
+
+---
+
+## 3. API Routes Specification
 
 | Route | Method | Purpose | Vercel Serverless File |
 | :--- | :--- | :--- | :--- |
@@ -27,21 +38,21 @@
 
 ---
 
-## 3. Required Environment Variables
+## 4. Required Environment Variables
 
 All sensitive API keys remain strictly server-side and are documented in `.env.example`:
 
 | Variable | Scope | Required | Description |
 | :--- | :--- | :--- | :--- |
 | `ROBOFLOW_API_KEY` | Server-Side Secret | Yes (for live inference) | Roboflow API key for serverless workflow execution. Never exposed to client. |
-| `ROBOFLOW_WORKFLOW_URL` | Server-Side / Config | Optional (defaults to workflow) | `https://serverless.roboflow.com/kumar-ritovash/workflows/building-infrastructure-defects-logic` |
+| `ROBOFLOW_WORKFLOW_URL` | Server-Side / Config | Optional (defaults to workflow) | `https://serverless.roboflow.com/kumar-ritovash/workflows/general-segmentation-api-2` |
 | `GEMINI_API_KEY` | Server-Side Secret | Optional | Google Gemini API key for AI forensic report synthesis. Falls back to deterministic IS 456 engine if not provided. |
 | `VITE_SUPABASE_URL` | Client & Server (Public) | Yes (for live Supabase) | Project URL for Supabase Auth and PostgreSQL storage. |
 | `VITE_SUPABASE_ANON_KEY` | Client & Server (Public) | Yes (for live Supabase) | Supabase anonymous public client key for user authentication. |
 
 ---
 
-## 4. Roboflow & StructuralAI Risk Engine Pipeline
+## 5. Roboflow & StructuralAI Risk Engine Pipeline
 
 ```
 User Uploads Real Structural Image
@@ -50,7 +61,7 @@ User Uploads Real Structural Image
 [Express / Vercel Serverless: POST /api/analyze]
        │
        ├─► [1] Roboflow Serverless Workflow API
-       │       ├── Endpoint: https://serverless.roboflow.com/kumar-ritovash/workflows/building-infrastructure-defects-logic
+       │       ├── Endpoint: https://serverless.roboflow.com/kumar-ritovash/workflows/general-segmentation-api-2
        │       ├── Uses server-side process.env.ROBOFLOW_API_KEY
        │       └── Returns: predictions (x, y, width, height, confidence, class, points/masks)
        │
@@ -78,7 +89,7 @@ User Uploads Real Structural Image
 
 ---
 
-## 5. Forensic Report Structure (9 Required Sections)
+## 6. Forensic Report Structure (9 Required Sections)
 
 1. **Building Information:** Asset Name, Code, Category, Structural System, Locality, Year Built, Floors/Spans, Owner
 2. **Inspection Summary:** Certificate ID, Inspected Structural Element, Location/Grid, Lead Auditor, Badge ID, Date, SHI Score, Risk Level
@@ -92,7 +103,7 @@ User Uploads Real Structural Image
 
 ---
 
-## 6. Known Limitations & Operating Boundaries
+## 7. Known Limitations & Operating Boundaries
 
 1. **Roboflow Cold-Start Latency:** Serverless Roboflow workflow execution may take 1.5–3.5s depending on image resolution and cold-start state.
 2. **Non-Destructive Preliminary Boundary:** In accordance with IS 456:2000 and CPWD regulations, AI-assisted computer vision crack detection provides non-destructive preliminary forensic assessment and must be accompanied by on-site core sampling (IS 516) and rebound hammer testing (IS 13311 Part 2) prior to structural load modifications.

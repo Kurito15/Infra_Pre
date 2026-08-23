@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import {
   ShieldCheck,
@@ -13,6 +13,7 @@ import {
   LogOut,
   X,
   CheckCircle2,
+  Clock,
 } from 'lucide-react';
 
 interface AuthModalProps {
@@ -45,6 +46,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [resending, setResending] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
+
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setCooldownSeconds((prev) => (prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldownSeconds]);
 
   if (!isOpen) return null;
 
@@ -95,13 +105,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
   const handleResend = async () => {
     const targetEmail = emailConfirmationPending || email;
-    if (!targetEmail) return;
+    if (!targetEmail || cooldownSeconds > 0) return;
     setResending(true);
     setError(null);
     try {
       const res = await resendConfirmationEmail(targetEmail);
-      if (res.error) setError(res.error);
-      else setSuccessMsg(res.message || 'Verification link re-sent.');
+      if (res.error) {
+        const secMatch = res.error.match(/(\d+)\s*seconds?/i);
+        if (secMatch) {
+          const secs = parseInt(secMatch[1], 10);
+          setCooldownSeconds(secs);
+          setError(`Security cooldown active. You can request another email in ${secs}s.`);
+        } else {
+          setError(res.error);
+        }
+      } else {
+        setCooldownSeconds(60);
+        setSuccessMsg(res.message || 'Verification link re-sent.');
+      }
     } finally {
       setResending(false);
     }

@@ -5,7 +5,7 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method not allowed. Use POST.' });
   }
 
-  const { building, inspection, defects, telemetry } = req.body || {};
+  const { building, inspection, defects, telemetry, history, inspectionHistory } = req.body || {};
 
   if (!building || !inspection) {
     return res.status(400).json({
@@ -19,6 +19,7 @@ export default async function handler(req: any, res: any) {
       inspection,
       defects: Array.isArray(defects) ? defects : (inspection.defects || []),
       telemetry: Array.isArray(telemetry) ? telemetry : [],
+      history: Array.isArray(history) ? history : (Array.isArray(inspectionHistory) ? inspectionHistory : []),
     });
 
     return res.status(200).json(report);
@@ -30,3 +31,4 @@ export default async function handler(req: any, res: any) {
     });
   }
 }
+
