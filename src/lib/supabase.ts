@@ -1,26 +1,27 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Public frontend Supabase configuration
+// Frontend-safe publishable credentials for browser authentication & database access
+export const SUPABASE_URL: string =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
+  'https://dsoxqjkjujcmqxikzxdd.supabase.co';
 
-// Detect whether valid Supabase configuration is present
-export const isSupabaseConfigured = Boolean(
-  supabaseUrl &&
-  supabaseAnonKey &&
-  typeof supabaseUrl === 'string' &&
-  supabaseUrl.startsWith('http')
+export const SUPABASE_PUBLISHABLE_KEY: string =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
+  'sb_publishable_-peCUvZj6xxyspvktIMdvQ_HI5h6I5t';
+
+// Evaluate Supabase configuration state from active frontend values
+export const isSupabaseConfigured: boolean = Boolean(
+  SUPABASE_URL &&
+  SUPABASE_PUBLISHABLE_KEY &&
+  SUPABASE_URL.startsWith('http') &&
+  !SUPABASE_PUBLISHABLE_KEY.includes('YOUR_')
 );
 
-if (!isSupabaseConfigured) {
-  console.warn(
-    'Supabase credentials (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY) are missing in environment configuration.'
-  );
-}
-
-// Supabase client instance created from environment configuration
+// Supabase client instance created from public frontend credentials
 export const supabase: SupabaseClient = createClient(
-  supabaseUrl || 'https://dsoxqjkjujcmqxikzxdd.supabase.co',
-  supabaseAnonKey || 'dummy-anon-key',
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY,
   {
     auth: {
       persistSession: true,
