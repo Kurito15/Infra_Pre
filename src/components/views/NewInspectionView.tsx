@@ -1,6 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Building, Inspection, Defect, SampleStructuralImage, ActiveTab } from '../../types';
-import { SAMPLE_IMAGES } from '../../data/mockData';
+import React, { useState, useRef } from 'react';
+import { Building, Inspection, Defect, ActiveTab } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { ImageAnnotator } from '../inspection/ImageAnnotator';
 import { DefectDetailCard } from '../inspection/DefectDetailCard';
@@ -9,24 +8,21 @@ import {
   UploadCloud,
   Camera,
   Cpu,
-  Sparkles,
   ShieldCheck,
   AlertTriangle,
   FileCheck,
   ArrowRight,
   RefreshCw,
-  Layers,
   Image as ImageIcon,
   CheckCircle2,
   BookmarkPlus,
-  HelpCircle,
   Activity,
   Code,
   Link,
   Zap,
-  ExternalLink,
   ChevronDown,
   ChevronUp,
+  X,
 } from 'lucide-react';
 
 interface NewInspectionViewProps {
@@ -50,37 +46,35 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
   const [locationDetails, setLocationDetails] = useState<string>('Basement Level -2, North-East Quad, adjacent to chiller plant');
   const [inspectorName, setInspectorName] = useState<string>(user?.fullName || 'Er. Arjun Sharma');
   const [inspectorBadge, setInspectorBadge] = useState<string>(user?.badgeNumber || 'CPWD-AUD-8821');
-  const [inspectorNotes, setInspectorNotes] = useState<string>('Diagonal shear distress observed under cyclic traffic vibration. Suspected cover spalling.');
+  const [inspectorNotes, setInspectorNotes] = useState<string>('Visual inspection of reinforced concrete surface. Examining crack morphology and potential spalling.');
 
-  // Image Upload Modes: 'upload' | 'url' | 'sample'
-  const [inputMode, setInputMode] = useState<'upload' | 'url' | 'sample'>('upload');
+  // Image Upload Modes: 'upload' | 'url'
+  const [inputMode, setInputMode] = useState<'upload' | 'url'>('upload');
   const [imageUrlInput, setImageUrlInput] = useState<string>('');
-  const [imagePreview, setImagePreview] = useState<string | null>(SAMPLE_IMAGES[0].url);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // Roboflow Workflow Configuration & Test Ping State
+  // Workflow Config state
   const [isPingingWorkflow, setIsPingingWorkflow] = useState<boolean>(false);
   const [workflowStatus, setWorkflowStatus] = useState<{
     tested: boolean;
     success: boolean;
     latencyMs?: number;
-    predictionsFound?: number;
     message?: string;
   }>({
-    tested: true,
+    tested: false,
     success: true,
-    latencyMs: 310,
-    predictionsFound: 2,
-    message: 'Workflow Connected & Ready',
+    message: 'Roboflow Workflow Ready',
   });
   const [showWorkflowDetails, setShowWorkflowDetails] = useState<boolean>(false);
   const [showRawJson, setShowRawJson] = useState<boolean>(false);
 
-  // Analysis & Scan State
+  // Analysis State
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [scanStep, setScanStep] = useState<string>('');
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<{
     structuralHealthIndex: number;
     overallRiskLevel: 'Low' | 'Moderate' | 'High' | 'Critical';
@@ -90,10 +84,6 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
     safetyPrecautions: string[];
     defects: Defect[];
     provider?: string;
-    isFallback?: boolean;
-    fallbackReason?: string;
-    defectCount?: number;
-    model?: string;
     workflowId?: string;
     rawWorkflowData?: any;
   } | null>(null);
@@ -102,56 +92,50 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
   const [isSaved, setIsSaved] = useState<boolean>(false);
   const [savedInspection, setSavedInspection] = useState<Inspection | null>(null);
 
-  // Handle building switch
   const currentBuilding = buildings.find((b) => b.id === selectedBuildingId) || buildings[0];
 
-  // Quick Roboflow Test Ping
+  // Test Roboflow Workflow endpoint
   const pingRoboflowWorkflow = async () => {
     setIsPingingWorkflow(true);
     try {
       const res = await fetch('/api/roboflow/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageUrl: imagePreview?.startsWith('http')
-            ? imagePreview
-            : 'https://images.unsplash.com/photo-1590069261209-f8e9b8642343?auto=format&fit=crop&w=800&q=80',
-        }),
       });
       const data = await res.json();
-      if (res.ok && data.success) {
+      if (res.ok && data.configured) {
         setWorkflowStatus({
           tested: true,
           success: true,
           latencyMs: data.latencyMs,
-          predictionsFound: data.predictionsFound,
-          message: `Endpoint Active (${data.latencyMs}ms)`,
+          message: `Endpoint Online (${data.latencyMs || 250}ms)`,
         });
       } else {
         setWorkflowStatus({
           tested: true,
           success: false,
-          message: data.error || 'Connection failed',
+          message: data.message || 'Workflow connection offline',
         });
       }
     } catch (err: any) {
       setWorkflowStatus({
         tested: true,
         success: false,
-        message: err.message || 'Network error pinging Roboflow',
+        message: err?.message || 'Network error pinging Roboflow',
       });
     } finally {
       setIsPingingWorkflow(false);
     }
   };
 
-  // Image upload handler
+  // Image file handler
   const handleFileUpload = (file: File) => {
     if (!file.type.startsWith('image/')) {
-      alert('Please upload a valid image file (JPEG, PNG, WEBP).');
+      setAnalysisError('Please select a valid image file (JPG, PNG, WEBP).');
       return;
     }
 
+    setAnalysisError(null);
     const reader = new FileReader();
     reader.onload = (e) => {
       if (e.target?.result) {
@@ -163,82 +147,81 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
     reader.readAsDataURL(file);
   };
 
-  // URL Image loader
+  // URL loader
   const handleApplyUrl = () => {
     if (!imageUrlInput.trim()) return;
+    setAnalysisError(null);
     setImagePreview(imageUrlInput.trim());
     setAnalysisResult(null);
     setIsSaved(false);
   };
 
-  // Sample image loader
-  const handleSelectSample = (sample: SampleStructuralImage) => {
-    setImagePreview(sample.url);
+  // Clear uploaded image
+  const handleClearImage = () => {
+    setImagePreview(null);
+    setImageUrlInput('');
     setAnalysisResult(null);
+    setAnalysisError(null);
     setIsSaved(false);
-    setSelectedElement(sample.element);
-    setInspectorNotes(sample.description);
-
-    const matchBuilding = buildings.find((b) => b.code === sample.defaultBuildingCode);
-    if (matchBuilding) {
-      setSelectedBuildingId(matchBuilding.id);
-    }
   };
 
-  // Run AI Inspection Analysis via Roboflow
+  // Execute Roboflow workflow analysis
   const runAiAnalysis = async () => {
     if (!imagePreview) {
-      alert('Please upload, capture, or select a structural inspection photograph.');
+      setAnalysisError('Please upload or capture a real structural photograph first.');
       return;
     }
 
     setIsAnalyzing(true);
+    setAnalysisError(null);
     setAnalysisResult(null);
     setIsSaved(false);
 
     try {
-      setScanStep('1/4: Initializing photogrammetry & pixel matrix resolution...');
-      await new Promise((r) => setTimeout(r, 300));
+      setScanStep('1/4: Initializing image matrix & resolution scale...');
+      await new Promise((r) => setTimeout(r, 200));
 
-      setScanStep('2/4: Sending to Roboflow Workflow: general-segmentation-api-2...');
-      await new Promise((r) => setTimeout(r, 350));
+      setScanStep('2/4: Calling Roboflow Workflow: building-infrastructure-defects-logic...');
 
-      setScanStep('3/4: Processing concrete segmentation & crack morphology...');
-
-      // Call Express server endpoint
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageBase64: imagePreview,
-          buildingName: currentBuilding?.name || 'Asset',
-          buildingCode: currentBuilding?.code || 'B-203',
+          image: imagePreview,
           element: selectedElement,
-          inspectorNotes: inspectorNotes,
+          buildingCode: currentBuilding?.code || 'B-203',
+          locationDetails,
         }),
       });
 
-      setScanStep('4/4: Quantifying IS 456 crack width, risk matrix & remediation directives...');
+      setScanStep('3/4: Parsing defect segmentation masks & bounding coordinates...');
 
       if (!response.ok) {
-        throw new Error(`Analysis server returned ${response.status}`);
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.error || errJson.message || 'Unable to analyze image. Please retry.');
       }
 
       const data = await response.json();
+
+      setScanStep('4/4: Calculating IS 456 crack aperture & Structural Health Index...');
+      await new Promise((r) => setTimeout(r, 200));
+
       setAnalysisResult(data);
-      if (data.defects?.length > 0) {
+      if (data.defects && data.defects.length > 0) {
         setSelectedDefectId(data.defects[0].id);
       }
     } catch (err: any) {
-      console.error('Inspection analysis error:', err);
-      alert('Roboflow scan encountered a network issue. Falling back to calibrated model analysis.');
+      console.error('Roboflow analysis failed:', err);
+      // Strictly comply with rule: Never mock, show exact required error
+      setAnalysisError('Unable to analyze image. Please retry.');
+      setAnalysisResult(null);
     } finally {
       setIsAnalyzing(false);
       setScanStep('');
     }
   };
 
-  // Save & File Inspection
+  // Save inspection to Supabase
   const handleSaveInspection = () => {
     if (!analysisResult || !imagePreview) return;
 
@@ -273,7 +256,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
 
     try {
       confetti({
-        particleCount: 60,
+        particleCount: 50,
         spread: 60,
         origin: { y: 0.7 },
       });
@@ -282,38 +265,19 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Top Header */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2 flex-wrap">
             <span>New Forensic Inspection & CAD Defect Analysis</span>
-            <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1.5">
+            <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1.5 font-bold">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
-              Roboflow Workflow: general-segmentation-api-2
+              Roboflow Workflow: building-infrastructure-defects-logic
             </span>
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Capture or upload structural element photos to run serverless Roboflow segmentation, measure IS 456 crack width, and compute health indices.
+            Upload real structural member photographs to execute serverless Roboflow segmentation and compute IS 456 crack indices.
           </p>
-        </div>
-
-        {/* Quick Sample Selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-semibold text-slate-500 hidden sm:inline">
-            Load Field Sample:
-          </span>
-          <div className="flex items-center gap-1.5 overflow-x-auto max-w-xs sm:max-w-none">
-            {SAMPLE_IMAGES.slice(0, 3).map((sample) => (
-              <button
-                key={sample.id}
-                type="button"
-                onClick={() => handleSelectSample(sample)}
-                className="px-2.5 py-1 rounded-lg border border-slate-200 hover:border-blue-400 bg-white text-[11px] font-medium text-slate-700 hover:bg-blue-50/50 transition-colors whitespace-nowrap"
-              >
-                {sample.category}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 
@@ -327,7 +291,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-bold text-white tracking-wide">
-                  Roboflow Serverless Workflow Engine
+                  Roboflow Serverless Inference Engine
                 </span>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
@@ -335,7 +299,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-slate-300 font-mono mt-0.5 truncate max-w-xl">
-                kumar-ritovash/workflows/general-segmentation-api-2
+                kumar-ritovash/workflows/building-infrastructure-defects-logic
               </p>
             </div>
           </div>
@@ -346,10 +310,9 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
               disabled={isPingingWorkflow}
               onClick={pingRoboflowWorkflow}
               className="px-3 py-1.5 rounded-lg bg-blue-600/80 hover:bg-blue-600 text-white text-xs font-semibold flex items-center gap-1.5 border border-blue-400/30 transition-colors disabled:opacity-50"
-              title="Ping Roboflow Workflow serverless endpoint"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isPingingWorkflow ? 'animate-spin' : ''}`} />
-              <span>{isPingingWorkflow ? 'Pinging...' : 'Test Connection'}</span>
+              <span>{isPingingWorkflow ? 'Testing...' : 'Test Connection'}</span>
             </button>
 
             <button
@@ -357,37 +320,36 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
               onClick={() => setShowWorkflowDetails(!showWorkflowDetails)}
               className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1 border border-slate-700 transition-colors"
             >
-              <span>Config</span>
+              <span>Info</span>
               {showWorkflowDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
           </div>
         </div>
 
-        {/* Collapsible Workflow Details */}
         {showWorkflowDetails && (
           <div className="mt-3 pt-3 border-t border-slate-800 text-xs space-y-2 font-mono">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
               <div>
                 <span className="text-slate-400">Endpoint:</span>{' '}
                 <span className="text-blue-300 break-all">
-                  https://serverless.roboflow.com/kumar-ritovash/workflows/general-segmentation-api-2
+                  https://serverless.roboflow.com/kumar-ritovash/workflows/building-infrastructure-defects-logic
                 </span>
               </div>
               <div>
-                <span className="text-slate-400">API Key:</span>{' '}
-                <span className="text-emerald-300">hFTl5s6IVgFqAXKmxfyj (Active)</span>
+                <span className="text-slate-400">API Key Source:</span>{' '}
+                <span className="text-emerald-300">process.env.ROBOFLOW_API_KEY (Server-Side)</span>
               </div>
             </div>
             <div>
-              <span className="text-slate-400">Active Segmentation Classes:</span>
+              <span className="text-slate-400">Active Defect Classes:</span>
               <div className="flex flex-wrap gap-1.5 mt-1">
                 {[
-                  'damage_type',
                   'structural_crack',
                   'surface_crack',
                   'concrete_spalling',
                   'reinforcement_corrosion',
                   'water_damage',
+                  'honeycombing',
                 ].map((cls) => (
                   <span
                     key={cls}
@@ -402,14 +364,14 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
         )}
       </div>
 
-      {/* Main Two-Column Workflow Layout */}
+      {/* Main Two-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Form & Image Upload (5 Cols) */}
+        {/* Left Column: Form & Photo Input */}
         <div className="lg:col-span-5 space-y-4">
           {/* Metadata Card */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3.5 text-xs">
-            <h3 className="font-bold text-xs text-slate-900 uppercase tracking-wider text-slate-500 border-b border-slate-100 pb-2">
-              1. Asset & Element Information
+            <h3 className="font-bold text-xs uppercase tracking-wider text-slate-500 border-b border-slate-100 pb-2">
+              1. Asset & Element Identification
             </h3>
 
             {/* Building Selection */}
@@ -433,7 +395,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
             {/* Element Name */}
             <div>
               <label className="block font-semibold text-slate-700 mb-1">
-                Structural Component & Grid Tag
+                Structural Component & Grid Reference
               </label>
               <input
                 type="text"
@@ -447,7 +409,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
             {/* Location Details */}
             <div>
               <label className="block font-semibold text-slate-700 mb-1">
-                Exact Zonal Location / Coordinates
+                Exact Location / Grid Coordinates
               </label>
               <input
                 type="text"
@@ -496,14 +458,14 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
             </div>
           </div>
 
-          {/* Photo Evidence & Input Card */}
+          {/* Photo Evidence Input */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 className="font-bold text-xs text-slate-900 uppercase tracking-wider text-slate-500">
-                2. Photographic Evidence Input
+              <h3 className="font-bold text-xs uppercase tracking-wider text-slate-500">
+                2. Real Photographic Evidence
               </h3>
-              
-              {/* Input Mode Tabs */}
+
+              {/* Mode Tabs */}
               <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg">
                 <button
                   type="button"
@@ -521,21 +483,12 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                     inputMode === 'url' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  Paste URL
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setInputMode('sample')}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
-                    inputMode === 'sample' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Samples
+                  Image URL
                 </button>
               </div>
             </div>
 
-            {/* Hidden File / Camera Inputs */}
+            {/* Hidden File Inputs */}
             <input
               ref={fileInputRef}
               type="file"
@@ -560,8 +513,8 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
               }}
             />
 
-            {/* Mode 1: Drag & Drop Upload */}
-            {inputMode === 'upload' && (
+            {/* Upload Box */}
+            {inputMode === 'upload' && !imagePreview && (
               <div className="space-y-2">
                 <div
                   onDragOver={(e) => {
@@ -577,20 +530,20 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                     }
                   }}
                   onClick={() => fileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-150 ${
+                  className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-150 ${
                     isDragOver
                       ? 'border-blue-600 bg-blue-50/70'
                       : 'border-slate-300 hover:border-blue-400 bg-slate-50/50 hover:bg-blue-50/30'
                   }`}
                 >
-                  <div className="h-10 w-10 mx-auto rounded-full bg-blue-100 text-blue-700 flex items-center justify-center mb-2">
-                    <UploadCloud className="w-5 h-5" />
+                  <div className="h-11 w-11 mx-auto rounded-full bg-blue-100 text-blue-700 flex items-center justify-center mb-2">
+                    <UploadCloud className="w-6 h-6" />
                   </div>
                   <div className="text-xs font-bold text-slate-800">
-                    Drag & Drop high-res structural photo here
+                    Upload High-Resolution Damage Photo
                   </div>
                   <p className="text-[11px] text-slate-500 mt-1">
-                    or click to browse from device (Supports JPG, PNG, WEBP)
+                    Click to browse from device or drag & drop (JPG, PNG, WEBP)
                   </p>
                 </div>
 
@@ -605,8 +558,8 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
               </div>
             )}
 
-            {/* Mode 2: Paste URL */}
-            {inputMode === 'url' && (
+            {/* URL Input */}
+            {inputMode === 'url' && !imagePreview && (
               <div className="space-y-2">
                 <div className="flex gap-2">
                   <div className="relative flex-1">
@@ -615,7 +568,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                       type="url"
                       value={imageUrlInput}
                       onChange={(e) => setImageUrlInput(e.target.value)}
-                      placeholder="https://example.com/crack_photo.jpg"
+                      placeholder="https://example.com/concrete_crack.jpg"
                       className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
                     />
                   </div>
@@ -628,46 +581,53 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Paste direct public image URL to analyze with Roboflow.
+                  Provide a direct public image URL to inspect.
                 </p>
               </div>
             )}
 
-            {/* Mode 3: Verified Samples */}
-            {inputMode === 'sample' && (
+            {/* Image Preview & Change controls */}
+            {imagePreview && (
               <div className="space-y-2">
-                <div className="text-[11px] font-semibold text-slate-600 mb-1">
-                  Select verified field photo sample:
+                <div className="relative rounded-xl overflow-hidden border border-slate-300 bg-slate-900 group">
+                  <img
+                    src={imagePreview}
+                    alt="Structural Element Preview"
+                    className="w-full max-h-56 object-contain mx-auto"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleClearImage}
+                    className="absolute top-2 right-2 p-1.5 rounded-full bg-slate-900/80 hover:bg-red-600 text-white transition-colors"
+                    title="Remove Photo"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {SAMPLE_IMAGES.map((sample) => (
-                    <div
-                      key={sample.id}
-                      onClick={() => handleSelectSample(sample)}
-                      className={`p-2 rounded-lg border text-left cursor-pointer transition-all flex items-center gap-2 ${
-                        imagePreview === sample.url
-                          ? 'border-blue-600 bg-blue-50/80 ring-1 ring-blue-600'
-                          : 'border-slate-200 hover:border-slate-300 bg-slate-50 hover:bg-white'
-                      }`}
-                    >
-                      <img
-                        src={sample.url}
-                        alt={sample.title}
-                        className="h-9 w-9 rounded object-cover border border-slate-300 shrink-0"
-                      />
-                      <div className="min-w-0">
-                        <div className="text-[11px] font-bold text-slate-900 truncate">
-                          {sample.title}
-                        </div>
-                        <div className="text-[10px] text-slate-500 truncate">{sample.element}</div>
-                      </div>
-                    </div>
-                  ))}
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-1.5 px-3 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <UploadCloud className="w-3.5 h-3.5" />
+                  <span>Choose Different Photo</span>
+                </button>
+              </div>
+            )}
+
+            {/* Error Banner */}
+            {analysisError && (
+              <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-800 flex items-start gap-2.5 animate-in fade-in duration-200">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <span className="font-bold block text-red-900">Analysis Error</span>
+                  <p className="text-[11px] text-red-700 mt-0.5">{analysisError}</p>
                 </div>
               </div>
             )}
 
-            {/* Main Action: Analyze Button */}
+            {/* Run Analysis Action Button */}
             <div className="pt-2">
               <button
                 type="button"
@@ -683,7 +643,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                 ) : (
                   <>
                     <Zap className="w-4 h-4 text-amber-300" />
-                    <span>Run Roboflow Workflow Scan (general-segmentation-api-2)</span>
+                    <span>Run Roboflow Workflow Scan</span>
                   </>
                 )}
               </button>
@@ -691,9 +651,9 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Visual Annotator & CAD Results (7 Cols) */}
+        {/* Right Column: Visual Annotator & CAD Results */}
         <div className="lg:col-span-7 space-y-4">
-          {/* Active Scanner Telemetry Progress Bar */}
+          {/* Active Scanner Telemetry Progress */}
           {isAnalyzing && (
             <div className="p-4 rounded-2xl bg-[#0B192C] text-white border border-slate-800 space-y-2 animate-pulse">
               <div className="flex items-center justify-between text-xs font-mono">
@@ -701,7 +661,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                   <Cpu className="w-4 h-4 animate-spin text-amber-400" />
                   Roboflow Serverless Inference Active
                 </span>
-                <span className="text-slate-400">Workflow: general-segmentation-api-2</span>
+                <span className="text-slate-400">Workflow: building-infrastructure-defects-logic</span>
               </div>
               <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
                 <div className="bg-gradient-to-r from-blue-500 to-amber-400 h-full rounded-full w-3/4 animate-progress" />
@@ -710,8 +670,8 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
             </div>
           )}
 
-          {/* Interactive Image Annotator Component */}
-          {imagePreview && (
+          {/* Interactive CAD Image Annotator Component */}
+          {imagePreview ? (
             <ImageAnnotator
               imageUrl={imagePreview}
               defects={analysisResult?.defects || []}
@@ -719,29 +679,22 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
               onSelectDefect={setSelectedDefectId}
               interactive={Boolean(analysisResult)}
             />
+          ) : (
+            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400 flex flex-col items-center justify-center space-y-2 min-h-[300px]">
+              <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400">
+                <ImageIcon className="w-6 h-6" />
+              </div>
+              <div className="text-sm font-semibold text-slate-600">No Image Uploaded</div>
+              <p className="text-xs max-w-sm">
+                Upload or capture a structural defect photo on the left to initialize computer vision defect mapping.
+              </p>
+            </div>
           )}
 
           {/* Analysis Results Display */}
           {analysisResult && (
             <div className="space-y-4 animate-in fade-in duration-200">
-              {/* Composite Score Summary Banner */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-                {/* Fallback Notice Banner if applicable */}
-                {analysisResult.isFallback && (
-                  <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-200 text-xs text-amber-900 flex items-start gap-2.5">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-bold block">
-                        Deterministic Civil Heuristics Engine Active
-                      </span>
-                      <p className="text-[11px] text-amber-800 mt-0.5">
-                        {analysisResult.fallbackReason ||
-                          'Roboflow server-side API offline; analyzed with certified deterministic IS 456 failure heuristics.'}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
                   <div>
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -753,7 +706,9 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                       </span>
                     </div>
                     <h3 className="text-base font-bold text-slate-900">
-                      {analysisResult.defects.length} Structural Defect(s) Localized
+                      {analysisResult.defects.length === 0
+                        ? 'Element Clear • No Severe Defects Localized'
+                        : `${analysisResult.defects.length} Structural Defect(s) Localized`}
                     </h3>
                   </div>
 
@@ -809,7 +764,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                   {analysisResult.diagnosisSummary}
                 </p>
 
-                {/* Mandatory Safety Precautions */}
+                {/* Safety Precautions */}
                 {analysisResult.safetyPrecautions?.length > 0 && (
                   <div className="bg-amber-50/80 border border-amber-200 p-3.5 rounded-xl text-xs space-y-1.5">
                     <h4 className="font-bold text-amber-900 flex items-center gap-1.5">
@@ -852,37 +807,39 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                 </div>
               </div>
 
-              {/* Individual Defect Cards */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-xs font-bold text-slate-700">
-                  <span>Defect Forensic Itemization</span>
-                  <span className="font-mono text-slate-400">
-                    Click card to focus CAD bounding box
-                  </span>
-                </div>
+              {/* Itemized Defect Cards */}
+              {analysisResult.defects.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                    <span>Defect Forensic Itemization</span>
+                    <span className="font-mono text-slate-400">
+                      Click card to focus CAD bounding box
+                    </span>
+                  </div>
 
-                {analysisResult.defects.map((defect, index) => (
-                  <DefectDetailCard
-                    key={defect.id || index}
-                    defect={defect}
-                    index={index}
-                    isSelected={selectedDefectId === defect.id}
-                    onSelect={() =>
-                      setSelectedDefectId(selectedDefectId === defect.id ? null : defect.id)
-                    }
-                  />
-                ))}
-              </div>
+                  {analysisResult.defects.map((defect, index) => (
+                    <DefectDetailCard
+                      key={defect.id || index}
+                      defect={defect}
+                      index={index}
+                      isSelected={selectedDefectId === defect.id}
+                      onSelect={() =>
+                        setSelectedDefectId(selectedDefectId === defect.id ? null : defect.id)
+                      }
+                    />
+                  ))}
+                </div>
+              )}
 
               {/* Action Bar: Save & Generate Report */}
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div>
                   <div className="text-xs font-bold text-slate-900">
-                    {isSaved ? 'Inspection Saved & Filed' : 'Ready to File Inspection Record'}
+                    {isSaved ? 'Inspection Saved & Filed to Supabase' : 'Ready to File Inspection Record'}
                   </div>
                   <p className="text-[11px] text-slate-500">
                     {isSaved
-                      ? 'Saved to official Zonal registry and certified database.'
+                      ? 'Saved to official Zonal registry and certified Supabase database.'
                       : 'Save this forensic analysis to the central audit registry.'}
                   </p>
                 </div>
@@ -892,7 +849,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                     <button
                       type="button"
                       onClick={handleSaveInspection}
-                      className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors flex items-center justify-center gap-2"
+                      className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <BookmarkPlus className="w-4 h-4" />
                       <span>Save & File Inspection</span>
@@ -907,7 +864,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                         className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <FileCheck className="w-4 h-4" />
-                        <span>View Certificate</span>
+                        <span>View Certificate & AI Report</span>
                       </button>
 
                       {currentBuilding?.code === 'B-203' ? (
@@ -929,15 +886,6 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                           <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       )}
-
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('overview')}
-                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                      >
-                        <span>Dashboard</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
                     </>
                   )}
                 </div>

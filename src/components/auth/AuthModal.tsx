@@ -1,6 +1,19 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { ShieldCheck, Mail, Lock, User, Building2, BadgeCheck, AlertCircle, ArrowRight, RefreshCw, KeyRound, X } from 'lucide-react';
+import {
+  ShieldCheck,
+  Mail,
+  Lock,
+  User,
+  Building2,
+  BadgeCheck,
+  AlertCircle,
+  ArrowRight,
+  RefreshCw,
+  LogOut,
+  X,
+  CheckCircle2,
+} from 'lucide-react';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -18,8 +31,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     signOut,
     resetPassword,
     resendConfirmationEmail,
-    confirmEmailInstantly,
-    signInAsDemo,
     clearEmailConfirmationPending,
   } = useAuth();
 
@@ -33,6 +44,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [resending, setResending] = useState(false);
 
   if (!isOpen) return null;
 
@@ -82,17 +94,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   };
 
   const handleResend = async () => {
-    if (!emailConfirmationPending && !email) return;
     const targetEmail = emailConfirmationPending || email;
-    const res = await resendConfirmationEmail(targetEmail);
-    if (res.error) setError(res.error);
-    else setSuccessMsg(res.message || 'Verification link re-sent.');
+    if (!targetEmail) return;
+    setResending(true);
+    setError(null);
+    try {
+      const res = await resendConfirmationEmail(targetEmail);
+      if (res.error) setError(res.error);
+      else setSuccessMsg(res.message || 'Verification link re-sent.');
+    } finally {
+      setResending(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-300 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-        {/* Top Header with Indian Engineering Product Branding */}
+        {/* Top Header */}
         <div className="bg-[#0B192C] px-6 py-5 text-white flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold shadow-sm">
@@ -100,15 +118,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-bold text-base tracking-tight">StructuralAI Identity</h3>
-                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-semibold uppercase ${
-                  isSupabaseLive ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                }`}>
-                  {isSupabaseLive ? 'Supabase Live' : 'Supabase Auth Ready'}
+                <h3 className="font-bold text-base tracking-tight">StructuralAI Account</h3>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full font-semibold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  IS 456 / Supabase
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Indian Infrastructure Inspection & Audit Portal
+                Certified Civil Infrastructure Health Portal
               </p>
             </div>
           </div>
@@ -121,7 +137,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           </button>
         </div>
 
-        {/* User is already signed in view */}
+        {/* User is signed in profile details */}
         {user ? (
           <div className="p-6 space-y-5">
             <div className="flex items-center gap-3.5 p-4 rounded-xl bg-slate-50 border border-slate-200">
@@ -138,292 +154,129 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <div className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                Switch Role / Quick Demo Profile:
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <div className="text-[10px] uppercase font-semibold text-slate-500">Organization</div>
+                <div className="font-bold text-slate-900 mt-0.5 truncate">{user.organization}</div>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => signInAsDemo('chief')}
-                  className="p-2.5 rounded-lg border border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 text-left transition-colors"
-                >
-                  <div className="text-xs font-bold text-slate-900">CPWD Lead</div>
-                  <div className="text-[10px] text-slate-500">Er. A. Sharma</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => signInAsDemo('field')}
-                  className="p-2.5 rounded-lg border border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 text-left transition-colors"
-                >
-                  <div className="text-xs font-bold text-slate-900">DMRC Expert</div>
-                  <div className="text-[10px] text-slate-500">Dr. P. Nair</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => signInAsDemo('cpwd')}
-                  className="p-2.5 rounded-lg border border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 text-left transition-colors"
-                >
-                  <div className="text-xs font-bold text-slate-900">NHAI Bridge</div>
-                  <div className="text-[10px] text-slate-500">Er. R. Verma</div>
-                </button>
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <div className="text-[10px] uppercase font-semibold text-slate-500">Account ID</div>
+                <div className="font-bold font-mono text-slate-900 mt-0.5 truncate">{user.id}</div>
               </div>
             </div>
 
-            <div className="pt-2 flex items-center justify-between border-t border-slate-200">
-              <button
-                type="button"
-                onClick={async () => {
-                  await signOut();
-                  setMode('signin');
-                }}
-                className="px-4 py-2 rounded-lg text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors"
-              >
-                Sign Out Session
-              </button>
-
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors"
-              >
-                Continue to Dashboard
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                await signOut();
+                onClose();
+              }}
+              className="w-full py-2.5 px-4 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 font-semibold text-xs transition-colors flex items-center justify-center gap-2"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Sign Out from StructuralAI</span>
+            </button>
           </div>
         ) : (
-          /* Sign In / Sign Up / Forgot Password Forms */
-          <div className="p-6 space-y-5">
-            {/* Tab navigation */}
-            <div className="flex border-b border-slate-200 text-xs font-semibold">
+          <div className="p-6 space-y-4">
+            {/* Mode Switcher */}
+            <div className="flex rounded-xl bg-slate-100 p-1 text-xs font-semibold">
               <button
                 type="button"
-                onClick={() => {
-                  setMode('signin');
-                  setError(null);
-                  setSuccessMsg(null);
-                }}
-                className={`pb-2.5 px-4 transition-colors relative ${
-                  mode === 'signin'
-                    ? 'text-blue-700 border-b-2 border-blue-700 font-bold'
-                    : 'text-slate-500 hover:text-slate-800'
+                onClick={() => setMode('signin')}
+                className={`flex-1 py-1.5 rounded-lg transition-all ${
+                  mode === 'signin' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600'
                 }`}
               >
                 Sign In
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setMode('signup');
-                  setError(null);
-                  setSuccessMsg(null);
-                }}
-                className={`pb-2.5 px-4 transition-colors relative ${
-                  mode === 'signup'
-                    ? 'text-blue-700 border-b-2 border-blue-700 font-bold'
-                    : 'text-slate-500 hover:text-slate-800'
+                onClick={() => setMode('signup')}
+                className={`flex-1 py-1.5 rounded-lg transition-all ${
+                  mode === 'signup' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600'
                 }`}
               >
-                Sign Up (New Inspector)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('forgot');
-                  setError(null);
-                  setSuccessMsg(null);
-                }}
-                className={`pb-2.5 px-4 transition-colors relative ${
-                  mode === 'forgot'
-                    ? 'text-blue-700 border-b-2 border-blue-700 font-bold'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Forgot Password
+                Create Account
               </button>
             </div>
 
-            {/* Email Confirmation Alert Banner if pending */}
-            {emailConfirmationPending && (
-              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs space-y-2 text-amber-900">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div>
-                    <strong className="block font-semibold">Email Confirmation Required</strong>
-                    Confirmation link sent to: <span className="font-mono font-bold">{emailConfirmationPending}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={handleResend}
-                    className="px-2.5 py-1 rounded bg-amber-200/80 hover:bg-amber-300 text-amber-900 text-[11px] font-semibold transition-colors flex items-center gap-1"
-                  >
-                    <RefreshCw className="w-3 h-3" /> Resend Confirmation
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => confirmEmailInstantly(emailConfirmationPending)}
-                    className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold transition-colors"
-                  >
-                    Quick Confirm & Sign In
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Error or Success alerts */}
             {error && (
-              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
                 <span>{error}</span>
               </div>
             )}
 
             {successMsg && (
-              <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-start gap-2">
-                <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                 <span>{successMsg}</span>
               </div>
             )}
 
-            {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
               {mode === 'signup' && (
                 <>
                   <div>
-                    <label className="block text-slate-700 font-semibold mb-1">
-                      Full Name & Title
-                    </label>
-                    <div className="relative">
-                      <User className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                      <input
-                        type="text"
-                        required
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        placeholder="e.g. Er. Rajesh K. Verma"
-                        className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900"
-                      />
-                    </div>
+                    <label className="block font-semibold text-slate-700 mb-1">Full Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Er. Arjun Sharma"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900"
+                    />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-slate-700 font-semibold mb-1">Role / Designation</label>
-                      <select
-                        value={role}
-                        onChange={(e) => setRole(e.target.value)}
-                        className="w-full px-2.5 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 text-xs"
-                      >
-                        <option value="Senior Structural Auditor (Grade I)">Senior Structural Auditor</option>
-                        <option value="Chief Forensic Concrete Specialist">Forensic Concrete Specialist</option>
-                        <option value="Executive Civil Engineer">Executive Civil Engineer</option>
-                        <option value="NHAI Bridge Inspector">NHAI Bridge Inspector</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-700 font-semibold mb-1">Organization / Wing</label>
-                      <select
-                        value={organization}
-                        onChange={(e) => setOrganization(e.target.value)}
-                        className="w-full px-2.5 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 text-xs"
-                      >
-                        <option value="Central Public Works Dept (CPWD)">CPWD Northern Region</option>
-                        <option value="Delhi Metro Rail Corporation (DMRC)">DMRC Infrastructure</option>
-                        <option value="National Highways Authority of India (NHAI)">NHAI Highway Safety</option>
-                        <option value="L&T Infrastructure Civil Engineering">L&T Civil Engineering</option>
-                      </select>
-                    </div>
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Role / Designation</label>
+                    <input
+                      type="text"
+                      required
+                      value={role}
+                      onChange={(e) => setRole(e.target.value)}
+                      placeholder="Senior Structural Auditor"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900"
+                    />
                   </div>
                 </>
               )}
 
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">Email Address</label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="inspector.name@cpwd.gov.in"
-                    className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 font-mono"
-                  />
-                </div>
+                <label className="block font-semibold text-slate-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="auditor@cpwd.gov.in"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900"
+                />
               </div>
 
-              {mode !== 'forgot' && (
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-slate-700 font-semibold">Password</label>
-                    {mode === 'signin' && (
-                      <button
-                        type="button"
-                        onClick={() => setMode('forgot')}
-                        className="text-[11px] text-blue-600 hover:underline"
-                      >
-                        Forgot?
-                      </button>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                    <input
-                      type="password"
-                      required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Minimum 6 characters"
-                      className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900"
-                    />
-                  </div>
-                </div>
-              )}
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Password</label>
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-900"
+                />
+              </div>
 
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                {submitting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                {mode === 'signin' ? 'Sign In to Infrastructure Portal' : mode === 'signup' ? 'Create Certified Inspector Account' : 'Dispatch Password Reset Link'}
-                {!submitting && <ArrowRight className="w-3.5 h-3.5" />}
+                {submitting ? <RefreshCw className="w-4 h-4 animate-spin" /> : null}
+                <span>{mode === 'signin' ? 'Sign In' : 'Create Account'}</span>
               </button>
             </form>
-
-            {/* Quick Demo Login Preset Buttons */}
-            <div className="pt-3 border-t border-slate-200">
-              <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2 text-center">
-                Or One-Click Demo Access
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    signInAsDemo('chief');
-                    onClose();
-                  }}
-                  className="p-2 rounded-lg border border-slate-200 hover:border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-800 text-left transition-colors"
-                >
-                  <div className="font-bold text-xs text-slate-900">Lead CPWD Auditor</div>
-                  <div className="text-[10px] text-slate-500">Er. Arjun Sharma</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    signInAsDemo('field');
-                    onClose();
-                  }}
-                  className="p-2 rounded-lg border border-slate-200 hover:border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-800 text-left transition-colors"
-                >
-                  <div className="font-bold text-xs text-slate-900">DMRC Specialist</div>
-                  <div className="text-[10px] text-slate-500">Dr. Priya Nair</div>
-                </button>
-              </div>
-            </div>
           </div>
         )}
       </div>

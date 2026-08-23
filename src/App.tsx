@@ -19,9 +19,11 @@ import { RiskMonitorView } from './components/views/RiskMonitorView';
 import { ReportsView } from './components/views/ReportsView';
 import { InspectionReportModal } from './components/common/InspectionReportModal';
 import { AuthModal } from './components/auth/AuthModal';
+import { AuthScreen } from './components/auth/AuthScreen';
+import { ShieldCheck, RefreshCw } from 'lucide-react';
 
 function MainApplication() {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
@@ -39,12 +41,12 @@ function MainApplication() {
 
   // Load user data on auth user change / mount
   const loadUserData = useCallback(async () => {
-    const userId = user?.id || 'default_guest';
+    if (!user) return;
+    const userId = user.id;
     setIsLoadingData(true);
     try {
-      if (user) {
-        syncUserProfile(user).catch(() => {});
-      }
+      syncUserProfile(user).catch(() => {});
+
       const [userBuildings, userInspections] = await Promise.all([
         fetchUserBuildings(userId),
         fetchUserInspections(userId),
@@ -71,17 +73,19 @@ function MainApplication() {
   }, [user]);
 
   useEffect(() => {
-    loadUserData();
-  }, [loadUserData]);
+    if (user) {
+      loadUserData();
+    }
+  }, [user, loadUserData]);
 
   // Handle adding a new building (+ Add Building)
   const handleAddBuilding = async (newBuilding: Building) => {
     const userId = user?.id || 'default_guest';
     const buildingWithUser = { ...newBuilding, userId };
-    
+
     // Optimistic state update
     setBuildings((prev) => [buildingWithUser, ...prev.filter((b) => b.id !== buildingWithUser.id)]);
-    
+
     // Save to Supabase table & local cache
     try {
       await saveUserBuilding(userId, buildingWithUser);
@@ -135,12 +139,32 @@ function MainApplication() {
     }
   };
 
+  // Show loading indicator while session initializes
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white space-y-3">
+        <div className="h-12 w-12 rounded-2xl bg-blue-600 flex items-center justify-center animate-pulse">
+          <ShieldCheck className="w-6 h-6 text-white" />
+        </div>
+        <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
+          <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
+          <span>Verifying StructuralAI Security Session...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // STRICT AUTHENTICATION FIRST: If not logged in, render AuthScreen
+  if (!user) {
+    return <AuthScreen />;
+  }
+
   const b203Building = buildings.find((b) => b.code === 'B-203') || buildings[0];
   const criticalAlertCount = buildings.filter((b) => b.riskStatus === 'Critical').length;
 
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-900 flex font-sans antialiased">
-      {/* Navy Navigation Sidebar */}
+      {/* Navigation Sidebar */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -248,7 +272,7 @@ function MainApplication() {
         />
       )}
 
-      {/* Supabase Authentication Modal (Sign Up, Sign In, Resend, Forgot Password) */}
+      {/* Profile & Account Details Modal */}
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
     </div>
   );

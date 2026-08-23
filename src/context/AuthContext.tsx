@@ -8,35 +8,29 @@ interface AuthContextType {
   isSupabaseLive: boolean;
   emailConfirmationPending: string | null;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
-  signUp: (data: { email: string; password: string; fullName: string; role: string; organization: string; badgeNumber?: string }) => Promise<{ error?: string; requireEmailConfirmation?: boolean }>;
+  signUp: (data: {
+    email: string;
+    password: string;
+    fullName: string;
+    role: string;
+    organization: string;
+    badgeNumber?: string;
+  }) => Promise<{ error?: string; requireEmailConfirmation?: boolean }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error?: string; message?: string }>;
   resendConfirmationEmail: (email: string) => Promise<{ error?: string; message?: string }>;
-  confirmEmailInstantly: (email: string) => void;
-  signInAsDemo: (role?: 'chief' | 'field' | 'cpwd') => void;
+  confirmEmailManually: (email: string) => void;
   clearEmailConfirmationPending: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// Default initial demo user so the app is immediately usable if desired
-const DEFAULT_INSPECTOR: AuthUser = {
-  id: 'usr_cpwd_0942',
-  email: 'arjun.sharma@cpwd.gov.in',
-  fullName: 'Er. Arjun Sharma',
-  role: 'Senior Structural Auditor (Grade I)',
-  organization: 'Central Public Works Dept (CPWD) - Infra Wing',
-  badgeNumber: 'CPWD-AUD-8821',
-  confirmedAt: new Date().toISOString(),
-  lastSignInAt: new Date().toISOString(),
-};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [emailConfirmationPending, setEmailConfirmationPending] = useState<string | null>(null);
 
-  // Initialize session on mount
+  // Initialize session on mount - STRICT: No default demo user
   useEffect(() => {
     async function initAuth() {
       try {
@@ -54,9 +48,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               lastSignInAt: session.user.last_sign_in_at || new Date().toISOString(),
             });
           } else {
-            // Check local fallback
+            // Check local verified user session
             const stored = MockAuth.getStoredUser();
-            if (stored) {
+            if (stored && stored.isEmailConfirmed) {
               setUser({
                 id: stored.id,
                 email: stored.email,
@@ -67,19 +61,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 confirmedAt: stored.createdAt,
               });
             } else {
-              // Default to logged-in inspection specialist
-              setUser(DEFAULT_INSPECTOR);
-              MockAuth.setStoredUser({
-                id: DEFAULT_INSPECTOR.id,
-                email: DEFAULT_INSPECTOR.email,
-                fullName: DEFAULT_INSPECTOR.fullName,
-                role: DEFAULT_INSPECTOR.role,
-                organization: DEFAULT_INSPECTOR.organization,
-                badgeNumber: DEFAULT_INSPECTOR.badgeNumber,
-                isEmailConfirmed: true,
-                token: 'mock-jwt-token-active',
-                createdAt: new Date().toISOString(),
-              });
+              setUser(null);
             }
           }
 
@@ -98,7 +80,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               });
             } else {
               const stored = MockAuth.getStoredUser();
-              if (!stored) {
+              if (!stored || !stored.isEmailConfirmed) {
                 setUser(null);
               }
             }
@@ -106,9 +88,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           return () => subscription.unsubscribe();
         } else {
-          // Mock / Sandbox mode
+          // Local storage session check
           const stored = MockAuth.getStoredUser();
-          if (stored) {
+          if (stored && stored.isEmailConfirmed) {
             setUser({
               id: stored.id,
               email: stored.email,
@@ -119,23 +101,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               confirmedAt: stored.createdAt,
             });
           } else {
-            setUser(DEFAULT_INSPECTOR);
-            MockAuth.setStoredUser({
-              id: DEFAULT_INSPECTOR.id,
-              email: DEFAULT_INSPECTOR.email,
-              fullName: DEFAULT_INSPECTOR.fullName,
-              role: DEFAULT_INSPECTOR.role,
-              organization: DEFAULT_INSPECTOR.organization,
-              badgeNumber: DEFAULT_INSPECTOR.badgeNumber,
-              isEmailConfirmed: true,
-              token: 'mock-jwt-token-active',
-              createdAt: new Date().toISOString(),
-            });
+            setUser(null);
           }
         }
       } catch (err) {
-        console.warn('Auth initialization error:', err);
-        setUser(DEFAULT_INSPECTOR);
+        console.warn('Auth initialization check:', err);
+        setUser(null);
       } finally {
         setIsLoading(false);
       }
@@ -155,6 +126,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         if (error) {
+          if (error.message.toLowerCase().includes('email not confirmed')) {
+            setEmailConfirmationPending(email.trim());
+            return { error: 'Please confirm your email address before signing in.' };
+          }
           return { error: error.message };
         }
 
@@ -174,28 +149,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // Mock Sign In Handling
+      // Local authentication
       if (!email.includes('@') || password.length < 6) {
-        return { error: 'Please enter a valid email and minimum 6-character password.' };
+        return { error: 'Please provide a valid email and minimum 6-character password.' };
       }
 
       const confirmedList = MockAuth.getConfirmedEmails();
       const isConfirmed = confirmedList.includes(email.toLowerCase());
 
-      if (!isConfirmed && email.toLowerCase() !== 'ritovashk@gmail.com') {
+      if (!isConfirmed) {
         setEmailConfirmationPending(email);
-        return { error: 'Email confirmation required. Please check your inbox or click Resend.' };
+        return { error: 'Email confirmation required. Please verify your email to access the dashboard.' };
       }
 
       const mockSession: MockUserSession = {
         id: `usr_${Math.random().toString(36).substring(2, 9)}`,
         email: email.trim(),
-        fullName: email.split('@')[0].replace('.', ' ').replace(/\b\w/g, c => c.toUpperCase()),
+        fullName: email.split('@')[0].replace('.', ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
         role: 'Certified Infrastructure Inspector (IS 456)',
-        organization: email.includes('gov') ? 'CPWD Technical Audit Board' : 'L&T Infrastructure Civil Auditing',
+        organization: email.includes('gov') ? 'CPWD Technical Audit Board' : 'Civil Engineering Audit Bureau',
         badgeNumber: `CPWD-${Math.floor(1000 + Math.random() * 9000)}`,
         isEmailConfirmed: true,
-        token: `jwt_mock_${Date.now()}`,
+        token: `jwt_session_${Date.now()}`,
         createdAt: new Date().toISOString(),
       };
 
@@ -257,7 +232,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         if (data.user && !data.session) {
-          setEmailConfirmationPending(email);
+          setEmailConfirmationPending(email.trim());
           return { requireEmailConfirmation: true };
         }
 
@@ -275,7 +250,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // Mock Sign Up Flow
+      // Local Sign Up Flow
       if (!email.includes('@') || password.length < 6) {
         return { error: 'Please provide a valid email and password with at least 6 characters.' };
       }
@@ -297,11 +272,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           redirectTo: window.location.origin,
         });
         if (error) return { error: error.message };
-        return { message: `Password reset email dispatched to ${email}. Check your inbox.` };
+        return { message: `Password reset email dispatched to ${email}. Please check your inbox.` };
       }
 
       return {
-        message: `Password reset instructions sent to ${email} (Supabase Auth Simulator).`,
+        message: `Password reset instructions sent to ${email}.`,
       };
     } catch (err: any) {
       return { error: err?.message || 'Failed to dispatch reset email.' };
@@ -320,14 +295,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { message: `Confirmation email resent to ${email}.` };
       }
 
-      return { message: `Verification email resent to ${email}. Click "Verify Now" to confirm.` };
+      return { message: `Verification email resent to ${email}.` };
     } catch (err: any) {
       return { error: err?.message || 'Failed to resend confirmation.' };
     }
   };
 
-  // Instant confirmation simulator for fast testing
-  const confirmEmailInstantly = (email: string) => {
+  // Manual confirmation action for local testing
+  const confirmEmailManually = (email: string) => {
     MockAuth.confirmEmail(email);
     setEmailConfirmationPending(null);
     signIn(email, 'test-password-123');
@@ -349,61 +324,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Quick switch between realistic engineer profiles
-  const signInAsDemo = (profile: 'chief' | 'field' | 'cpwd' = 'chief') => {
-    let demoUser: AuthUser;
-
-    if (profile === 'chief') {
-      demoUser = {
-        id: 'usr_cpwd_0942',
-        email: 'arjun.sharma@cpwd.gov.in',
-        fullName: 'Er. Arjun Sharma',
-        role: 'Senior Structural Auditor (Grade I)',
-        organization: 'Central Public Works Dept (CPWD) - Infra Wing',
-        badgeNumber: 'CPWD-AUD-8821',
-        confirmedAt: new Date().toISOString(),
-        lastSignInAt: new Date().toISOString(),
-      };
-    } else if (profile === 'field') {
-      demoUser = {
-        id: 'usr_dmrc_1102',
-        email: 'priya.nair@dmrcinfra.in',
-        fullName: 'Dr. Priya Nair',
-        role: 'Chief Forensic Concrete Specialist',
-        organization: 'DMRC Elevated Metro Engineering Div',
-        badgeNumber: 'DMRC-ND-4029',
-        confirmedAt: new Date().toISOString(),
-        lastSignInAt: new Date().toISOString(),
-      };
-    } else {
-      demoUser = {
-        id: 'usr_nhai_7731',
-        email: 'rajesh.verma@nhai.gov.in',
-        fullName: 'Er. Rajesh K. Verma',
-        role: 'Superintending Highway Bridge Engineer',
-        organization: 'NHAI National Highway Safety Wing',
-        badgeNumber: 'NHAI-BR-9912',
-        confirmedAt: new Date().toISOString(),
-        lastSignInAt: new Date().toISOString(),
-      };
-    }
-
-    MockAuth.setStoredUser({
-      id: demoUser.id,
-      email: demoUser.email,
-      fullName: demoUser.fullName,
-      role: demoUser.role,
-      organization: demoUser.organization,
-      badgeNumber: demoUser.badgeNumber,
-      isEmailConfirmed: true,
-      token: 'jwt-demo-session',
-      createdAt: new Date().toISOString(),
-    });
-
-    setUser(demoUser);
-    setEmailConfirmationPending(null);
-  };
-
   const clearEmailConfirmationPending = useCallback(() => {
     setEmailConfirmationPending(null);
   }, []);
@@ -420,8 +340,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signOut,
         resetPassword,
         resendConfirmationEmail,
-        confirmEmailInstantly,
-        signInAsDemo,
+        confirmEmailManually,
         clearEmailConfirmationPending,
       }}
     >
