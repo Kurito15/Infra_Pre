@@ -1,4 +1,6 @@
 import dotenv from 'dotenv';
+import { executeGeminiVisualAnalysis } from './geminiVisualAnalysis';
+
 dotenv.config();
 
 export interface RoboflowAnalysisInput {
@@ -42,6 +44,8 @@ export interface AnalysisResponse {
   success: boolean;
   provider: string;
   workflowId: string;
+  isFallback?: boolean;
+  reportSource?: 'Roboflow + Gemini' | 'Gemini Visual Assessment' | string;
   overallRiskLevel: 'Critical' | 'High' | 'Moderate' | 'Low';
   structuralHealthIndex: number;
   riskScore: number;
@@ -238,12 +242,13 @@ export function buildEngineeringAnalysis(
   elementName: string,
   rawWorkflowData: any
 ): AnalysisResponse {
-  // If model detected 0 defects, the element is sound / no severe defects localized
   if (!rawPredictions || rawPredictions.length === 0) {
     return {
       success: true,
       provider: 'Roboflow Serverless Workflow (building-infrastructure-defects-logic)',
       workflowId: 'building-infrastructure-defects-logic',
+      isFallback: false,
+      reportSource: 'Roboflow + Gemini',
       overallRiskLevel: 'Low',
       structuralHealthIndex: 96,
       riskScore: 8,
@@ -263,13 +268,11 @@ export function buildEngineeringAnalysis(
     const cleanType = formatDefectClassName(rawClass);
     const confidence = pred.confidence > 1 ? pred.confidence / 100 : pred.confidence;
 
-    // Normalize coordinates to 0..1000 standard CAD space
     let normX = pred.x;
     let normY = pred.y;
     let normW = pred.width;
     let normH = pred.height;
 
-    // If coordinates are in 0..1 scale, multiply by 1000
     if (normX <= 1 && normY <= 1 && normW <= 1 && normH <= 1 && imageWidth <= 1) {
       normX *= 1000;
       normY *= 1000;
@@ -289,13 +292,10 @@ export function buildEngineeringAnalysis(
     const finalW = Math.max(30, xMax - xMin);
     const finalH = Math.max(30, yMax - yMin);
 
-    // Compute physical engineering measurements
-    // Assuming standard 1000px field-of-view corresponds to ~1200mm span
     const pxToMm = 1.2;
     const crackLengthMm = Math.round(Math.hypot(finalW, finalH) * pxToMm);
     const areaCoverage = Number(((finalW * finalH) / (1000 * 1000) * 100).toFixed(2));
 
-    // IS 456 Crack Aperture Estimation based on defect type and dimensions
     let crackWidthMm = 0.4;
     let severity: 'Critical' | 'High' | 'Moderate' | 'Low' = 'Moderate';
     let remediation = 'Low-pressure epoxy resin injection grouting (IS 456 Clause 35.3.2).';
@@ -360,7 +360,6 @@ export function buildEngineeringAnalysis(
     };
   });
 
-  // Calculate composite Structural Health Index (SHI) and Risk Matrix Score
   const criticalCount = defects.filter((d) => d.severity === 'Critical').length;
   const highCount = defects.filter((d) => d.severity === 'High').length;
   const moderateCount = defects.filter((d) => d.severity === 'Moderate').length;
@@ -401,6 +400,8 @@ export function buildEngineeringAnalysis(
     success: true,
     provider: 'Roboflow Serverless Workflow (building-infrastructure-defects-logic)',
     workflowId: 'building-infrastructure-defects-logic',
+    isFallback: false,
+    reportSource: 'Roboflow + Gemini',
     overallRiskLevel,
     structuralHealthIndex: shi,
     riskScore,
@@ -426,35 +427,45 @@ export async function executeRoboflowWorkflow(
     throw new Error('No valid image data provided for inspection analysis.');
   }
 
-  let cleanBase64 = imageData.trim();
+  let cleanInput = imageData.trim();
+  let payload: any = null;
 
-  // If input is an HTTP/HTTPS URL, pre-fetch it server-side to guarantee valid base64 payload
-  if (cleanBase64.startsWith('http://') || cleanBase64.startsWith('https://')) {
-    try {
-      const imgRes = await fetch(cleanBase64);
-      if (!imgRes.ok) {
-        throw new Error(`Remote image returned HTTP status ${imgRes.status}: ${imgRes.statusText}`);
+  // If input is an accessible public HTTPS URL, try sending type: "url" directly first
+  if (cleanInput.startsWith('https://') && !cleanInput.includes('localhost') && !cleanInput.includes('127.0.0.1')) {
+    payload = {
+      api_key: apiKey,
+      inputs: {
+        image: { type: 'url', value: cleanInput },
+      },
+    };
+  } else {
+    let cleanBase64 = cleanInput;
+    if (cleanBase64.startsWith('http://') || cleanBase64.startsWith('https://')) {
+      try {
+        const imgRes = await fetch(cleanBase64);
+        if (!imgRes.ok) {
+          throw new Error(`Remote image returned HTTP status ${imgRes.status}`);
+        }
+        const arrayBuffer = await imgRes.arrayBuffer();
+        cleanBase64 = Buffer.from(arrayBuffer).toString('base64');
+      } catch (fetchErr: any) {
+        throw new Error(`Unable to fetch image from URL: ${fetchErr?.message || 'Network error'}`);
       }
-      const arrayBuffer = await imgRes.arrayBuffer();
-      cleanBase64 = Buffer.from(arrayBuffer).toString('base64');
-    } catch (fetchErr: any) {
-      throw new Error(`Unable to fetch image from URL: ${fetchErr?.message || 'Network error'}`);
+    } else if (cleanBase64.includes('base64,')) {
+      cleanBase64 = cleanBase64.split('base64,')[1].trim();
     }
-  } else if (cleanBase64.includes('base64,')) {
-    // Strip data URI scheme prefix (e.g., data:image/jpeg;base64,)
-    cleanBase64 = cleanBase64.split('base64,')[1].trim();
-  }
 
-  if (!cleanBase64) {
-    throw new Error('Image data could not be parsed into a valid base64 representation.');
-  }
+    if (!cleanBase64) {
+      throw new Error('Image data could not be parsed into a valid base64 representation.');
+    }
 
-  const payload = {
-    api_key: apiKey,
-    inputs: {
-      image: { type: 'base64', value: cleanBase64 },
-    },
-  };
+    payload = {
+      api_key: apiKey,
+      inputs: {
+        image: { type: 'base64', value: cleanBase64 },
+      },
+    };
+  }
 
   const response = await fetch(workflowUrl, {
     method: 'POST',
@@ -480,4 +491,29 @@ export async function executeRoboflowWorkflow(
   const { predictions, imageWidth, imageHeight } = extractWorkflowPredictions(responseData);
 
   return buildEngineeringAnalysis(predictions, imageWidth, imageHeight, elementName, responseData);
+}
+
+/**
+ * TWO-PATH INSPECTION PIPELINE:
+ * Primary Path: Roboflow Computer Vision
+ * Fallback Path: Gemini Visual Assessment (if Roboflow is unavailable or errors)
+ */
+export async function analyzeStructuralImage(
+  imageData: string,
+  elementName: string = 'Primary Structural Member'
+): Promise<AnalysisResponse> {
+  try {
+    // 1. Attempt Primary Path: Roboflow Serverless Workflow
+    return await executeRoboflowWorkflow(imageData, elementName);
+  } catch (roboflowError: any) {
+    console.warn('Roboflow workflow execution failed; activating Gemini Visual Assessment fallback path:', roboflowError?.message || roboflowError);
+
+    // 2. Attempt Fallback Path: Gemini Visual Assessment
+    try {
+      return await executeGeminiVisualAnalysis(imageData, elementName, roboflowError?.message || 'Roboflow service error');
+    } catch (fallbackError: any) {
+      console.error('Both Roboflow and Gemini fallback failed:', fallbackError);
+      throw new Error(`Analysis pipeline error: Roboflow (${roboflowError?.message}) and Gemini Fallback (${fallbackError?.message})`);
+    }
+  }
 }

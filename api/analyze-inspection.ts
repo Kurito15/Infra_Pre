@@ -1,4 +1,4 @@
-import { executeRoboflowWorkflow } from '../server/analysisEngine';
+import { analyzeStructuralImage } from '../server/analysisEngine';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -24,15 +24,15 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const analysis = await executeRoboflowWorkflow(
+    const analysis = await analyzeStructuralImage(
       targetImage,
       element || (buildingCode ? `${buildingCode} Component` : 'Primary Structural Member')
     );
     return res.status(200).json(analysis);
   } catch (error: any) {
-    console.error('Roboflow Workflow Execution Error (/api/analyze-inspection):', error);
+    console.error('Inspection Analysis Pipeline Error (/api/analyze-inspection):', error);
     return res.status(502).json({
-      error: error?.message || 'Roboflow serverless workflow returned an unexpected response. Please retry.',
+      error: error?.message || 'Structural analysis failed on both Roboflow CV and Gemini fallback pipelines.',
       details: error?.message,
     });
   }
