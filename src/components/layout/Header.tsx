@@ -38,9 +38,7 @@ export const Header: React.FC<HeaderProps> = ({
       case 'new-inspection':
         return 'New Forensic AI Inspection & Defect Analysis';
       case 'buildings':
-        return 'Assets & Substructure Directory';
-      case 'b-203':
-        return 'Asset B-203: Pragati Tower Forensic Audit';
+        return 'Buildings & Structural Directory';
       case 'risk-monitor':
         return 'Live Risk Matrix & Hotspot Telemetry';
       case 'reports':

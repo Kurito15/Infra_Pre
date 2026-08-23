@@ -212,8 +212,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
       }
     } catch (err: any) {
       console.error('Roboflow analysis failed:', err);
-      // Strictly comply with rule: Never mock, show exact required error
-      setAnalysisError('Unable to analyze image. Please retry.');
+      setAnalysisError(err?.message || 'Unable to analyze image. Please retry.');
       setAnalysisResult(null);
     } finally {
       setIsAnalyzing(false);

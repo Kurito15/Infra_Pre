@@ -243,7 +243,7 @@ export interface AuthUser {
   lastSignInAt?: string;
 }
 
-export type ActiveTab = 'overview' | 'new-inspection' | 'buildings' | 'b-203' | 'risk-monitor' | 'reports';
+export type ActiveTab = 'overview' | 'buildings' | 'new-inspection' | 'risk-monitor' | 'reports';
 
 export interface SampleStructuralImage {
   id: string;

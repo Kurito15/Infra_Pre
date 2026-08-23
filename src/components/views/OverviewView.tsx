@@ -64,7 +64,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   const [telemetryTimeframe, setTelemetryTimeframe] = useState<'24h' | '7d' | '30d'>('24h');
 
   // Aggregate KPI metrics
-  const totalAssets = buildings.length;
+  const totalBuildings = buildings.length;
   const criticalBuildings = buildings.filter((b) => b.riskStatus === 'Critical').length;
   const highRiskBuildings = buildings.filter((b) => b.riskStatus === 'High').length;
   const totalInspectionsCount = inspections.length;
@@ -87,8 +87,8 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
     count,
   }));
 
-  // Structural Health Index by Asset Data
-  const healthByAssetData = buildings.map((b) => ({
+  // Structural Health Index by Building Data
+  const healthByBuildingData = buildings.map((b) => ({
     name: b.code,
     fullName: b.name,
     healthIndex: b.healthIndex,
@@ -134,14 +134,14 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-sm text-red-950">
-                  Critical Infrastructure Distress Alert: Asset B-203 Requires Immediate Propping
+                  Critical Infrastructure Distress Alert: {criticalBuildings} Building(s) Require Urgent Remediation
                 </h3>
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-red-200 text-red-900 uppercase">
                   Level-3 Hazard
                 </span>
               </div>
               <p className="text-xs text-red-800 mt-0.5">
-                Rebar corrosion cover spalling & shear fractures detected on Pragati Tower Column C-04 & Beam B-12. CPWD remediation protocol triggered.
+                Rebar corrosion cover spalling & shear fractures detected. CPWD emergency remediation protocol triggered.
               </p>
             </div>
           </div>
@@ -149,10 +149,10 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => setActiveTab('b-203')}
+              onClick={() => setActiveTab('buildings')}
               className="px-3.5 py-1.5 rounded-lg bg-red-700 hover:bg-red-800 text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
             >
-              <span>Inspect B-203</span>
+              <span>View Critical Buildings</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -165,7 +165,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
-              <span>Zonal Structural Health Index</span>
+              <span>Structural Health Index</span>
               <Activity className="w-4 h-4 text-emerald-600" />
             </div>
             <div className="mt-3 flex items-baseline gap-2">
@@ -187,14 +187,14 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
-              <span>Critical Distress Assets</span>
+              <span>Critical Distress Structures</span>
               <ShieldAlert className="w-4 h-4 text-red-600" />
             </div>
             <div className="mt-3 flex items-baseline gap-2">
               <span className="text-3xl font-extrabold font-mono text-red-600">
                 {criticalBuildings}
               </span>
-              <span className="text-xs text-slate-500">of {totalAssets} monitored assets</span>
+              <span className="text-xs text-slate-500">of {totalBuildings} registered buildings</span>
             </div>
           </div>
           <div className="mt-3 pt-2.5 border-t border-slate-100 text-xs text-slate-600 flex items-center justify-between font-mono">
@@ -277,7 +277,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={healthByAssetData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
+              <BarChart data={healthByBuildingData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                 <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#475569', fontWeight: 600 }} />
                 <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#64748B' }} />
@@ -298,7 +298,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 />
                 <ReferenceLine y={70} stroke="#EF4444" strokeDasharray="4 4" label={{ value: 'IS 456 Safe Baseline (70)', position: 'insideTopRight', fill: '#EF4444', fontSize: 10 }} />
                 <Bar dataKey="healthIndex" radius={[6, 6, 0, 0]}>
-                  {healthByAssetData.map((entry, index) => (
+                  {healthByBuildingData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.fill} />
                   ))}
                 </Bar>
@@ -523,12 +523,12 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
         </div>
 
-        {/* Right 1 Col: Asset Watchlist & Quick Switch */}
+        {/* Right 1 Col: Building Watchlist & Quick Switch */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
-              <h3 className="font-bold text-sm text-slate-900">Monitored Infrastructure</h3>
-              <p className="text-xs text-slate-500">Zonal asset vulnerability status</p>
+              <h3 className="font-bold text-sm text-slate-900">Monitored Buildings</h3>
+              <p className="text-xs text-slate-500">Structural health & vulnerability status</p>
             </div>
             <button
               type="button"
@@ -544,11 +544,8 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               <div
                 key={b.id}
                 onClick={() => {
-                  if (b.code === 'B-203') {
-                    setActiveTab('b-203');
-                  } else {
-                    onSelectBuilding(b);
-                  }
+                  onSelectBuilding(b);
+                  setActiveTab('buildings');
                 }}
                 className="p-3 rounded-xl border border-slate-200 hover:border-blue-400 hover:shadow-xs transition-all cursor-pointer bg-slate-50/60 hover:bg-white"
               >

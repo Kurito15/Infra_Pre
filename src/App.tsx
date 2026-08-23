@@ -14,7 +14,6 @@ import { Header } from './components/layout/Header';
 import { OverviewView } from './components/views/OverviewView';
 import { NewInspectionView } from './components/views/NewInspectionView';
 import { BuildingsView } from './components/views/BuildingsView';
-import { AssetB203View } from './components/views/AssetB203View';
 import { RiskMonitorView } from './components/views/RiskMonitorView';
 import { ReportsView } from './components/views/ReportsView';
 import { InspectionReportModal } from './components/common/InspectionReportModal';
@@ -232,25 +231,10 @@ function MainApplication() {
               buildings={buildings}
               setActiveTab={setActiveTab}
               onSelectBuilding={(b) => {
-                if (b.code === 'B-203') {
-                  setActiveTab('b-203');
-                } else {
-                  setSelectedBuilding(b);
-                }
+                setSelectedBuilding(b);
               }}
               onAddBuilding={handleAddBuilding}
               onDeleteBuilding={handleDeleteBuilding}
-            />
-          )}
-
-          {activeTab === 'b-203' && (
-            <AssetB203View
-              building={b203Building}
-              inspections={inspections.filter(
-                (i) => i.buildingCode === 'B-203' || i.buildingId === b203Building?.id
-              )}
-              setActiveTab={setActiveTab}
-              onSelectInspection={(insp) => setSelectedInspectionForModal(insp)}
             />
           )}
 

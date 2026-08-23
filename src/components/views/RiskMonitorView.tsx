@@ -113,7 +113,7 @@ export const RiskMonitorView: React.FC<RiskMonitorViewProps> = ({
     }
   };
 
-  // Dedicated Hotlist for Priority Assets
+  // Dedicated Hotlist for Priority Buildings
   const hotlist = [
     {
       code: 'B-203',
@@ -123,7 +123,7 @@ export const RiskMonitorView: React.FC<RiskMonitorViewProps> = ({
       status: 'Immediate Propping Verified (Acro Steel Props)',
       priority: 'Critical',
       shi: 58,
-      tab: 'b-203' as ActiveTab,
+      tab: 'buildings' as ActiveTab,
     },
     {
       code: 'C-301',
@@ -189,7 +189,7 @@ export const RiskMonitorView: React.FC<RiskMonitorViewProps> = ({
             </span>
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Real-time vulnerability mapping for Assets A-102, B-203, C-301, D-104, E-205 calibrated to IS 456 & CPWD safety thresholds.
+            Real-time vulnerability mapping for registered infrastructure buildings calibrated to IS 456 & CPWD safety thresholds.
           </p>
         </div>
 
@@ -199,31 +199,30 @@ export const RiskMonitorView: React.FC<RiskMonitorViewProps> = ({
         </div>
       </div>
 
-      {/* Target Asset Watch Cards (A-102, B-203, C-301, D-104, E-205) */}
+      {/* Target Building Watch Cards */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-xs uppercase tracking-wider text-slate-500 font-mono flex items-center gap-2">
             <Building2 className="w-4 h-4 text-blue-600" />
-            <span>Monitored Core Assets (A-102 &bull; B-203 &bull; C-301 &bull; D-104 &bull; E-205)</span>
+            <span>Monitored Buildings Vulnerability Index</span>
           </h3>
-          <span className="text-xs text-slate-400 font-mono">5 Monitored Facilities</span>
+          <span className="text-xs text-slate-400 font-mono">{priorityBuildings.length} Facilities</span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
           {priorityBuildings.map((b) => {
-            const isB203 = b.code === 'B-203';
+            const isCritical = b.riskStatus === 'Critical';
             return (
               <div
                 key={b.code}
                 onClick={() => {
-                  if (isB203) {
-                    setActiveTab('b-203');
-                  } else if (onSelectBuilding) {
+                  if (onSelectBuilding) {
                     onSelectBuilding(b);
+                    setActiveTab('buildings');
                   }
                 }}
                 className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between space-y-3 shadow-2xs hover:shadow-xs ${
-                  isB203
+                  isCritical
                     ? 'bg-red-50/50 border-red-300 ring-2 ring-red-400/50'
                     : b.riskStatus === 'High'
                     ? 'bg-amber-50/50 border-amber-300'
@@ -263,12 +262,12 @@ export const RiskMonitorView: React.FC<RiskMonitorViewProps> = ({
                   <button
                     type="button"
                     className={`w-full py-1.5 px-2 rounded-lg text-[11px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer ${
-                      isB203
+                      isCritical
                         ? 'bg-red-700 hover:bg-red-800 text-white'
                         : 'bg-slate-100 hover:bg-slate-200 text-slate-800'
                     }`}
                   >
-                    <span>{isB203 ? 'Deep Dive B-203' : 'View Element Details'}</span>
+                    <span>View Building</span>
                     <ArrowRight className="w-3 h-3" />
                   </button>
                 </div>

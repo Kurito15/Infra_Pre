@@ -38,26 +38,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
       description: 'Zonal Structural Health Index',
     },
     {
+      id: 'buildings',
+      label: 'Buildings',
+      icon: Building2,
+      description: 'Directory & Structural Registry',
+    },
+    {
       id: 'new-inspection',
       label: 'New Inspection',
       icon: PlusCircle,
       badge: 'AI Scan',
       badgeColor: 'bg-amber-500 text-slate-950 font-bold',
       description: 'Upload, Detect & IS 456 Audit',
-    },
-    {
-      id: 'buildings',
-      label: 'Buildings & Assets',
-      icon: Building2,
-      description: 'Directory & Substructure Registry',
-    },
-    {
-      id: 'b-203',
-      label: 'Asset B-203',
-      icon: Building,
-      badge: 'Critical',
-      badgeColor: 'bg-red-500 text-white font-bold',
-      description: 'Pragati Tower Forensic Detail',
     },
     {
       id: 'risk-monitor',

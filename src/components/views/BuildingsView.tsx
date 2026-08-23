@@ -103,7 +103,7 @@ export const BuildingsView: React.FC<BuildingsViewProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-              Shahdara & East Delhi Infrastructure Asset Registry
+              Monitored Infrastructure Buildings Registry
             </h1>
             <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold">
               IS 456 / CPWD Compliant
@@ -144,7 +144,7 @@ export const BuildingsView: React.FC<BuildingsViewProps> = ({
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by asset code, name, locality, use, owner..."
+              placeholder="Search by building code, name, locality, use, owner..."
               className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 text-xs text-slate-900"
             />
           </div>
@@ -208,7 +208,7 @@ export const BuildingsView: React.FC<BuildingsViewProps> = ({
             <Building2 className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-slate-900">No matching infrastructure assets found</h3>
+            <h3 className="text-base font-bold text-slate-900">No matching buildings found</h3>
             <p className="text-xs text-slate-500 mt-1">
               No buildings match your current filters or search terms.
             </p>
@@ -219,7 +219,7 @@ export const BuildingsView: React.FC<BuildingsViewProps> = ({
             className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-xs shadow-xs hover:bg-blue-700 transition-colors inline-flex items-center gap-1.5"
           >
             <PlusCircle className="w-4 h-4" />
-            <span>Register New Asset</span>
+            <span>Register New Building</span>
           </button>
         </div>
       ) : (
@@ -424,15 +424,12 @@ export const BuildingsView: React.FC<BuildingsViewProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          if (building.code === 'B-203') {
-                            setActiveTab('b-203');
-                          } else {
-                            onSelectBuilding(building);
-                          }
+                          onSelectBuilding(building);
+                          setActiveTab('new-inspection');
                         }}
                         className="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors flex items-center gap-1 shadow-xs"
                       >
-                        <span>{building.code === 'B-203' ? 'Forensic Deep-Dive' : 'View Asset'}</span>
+                        <span>New Inspection</span>
                         <ArrowRight className="w-3.5 h-3.5" />
                       </button>
                     )}

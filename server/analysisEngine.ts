@@ -422,19 +422,37 @@ export async function executeRoboflowWorkflow(
     process.env.ROBOFLOW_WORKFLOW_URL ||
     'https://serverless.roboflow.com/kumar-ritovash/workflows/building-infrastructure-defects-logic';
 
-  let cleanBase64 = imageData;
-  let isUrl = false;
+  if (!imageData || typeof imageData !== 'string') {
+    throw new Error('No valid image data provided for inspection analysis.');
+  }
 
-  if (imageData.startsWith('http://') || imageData.startsWith('https://')) {
-    isUrl = true;
-  } else if (imageData.includes('base64,')) {
-    cleanBase64 = imageData.split('base64,')[1];
+  let cleanBase64 = imageData.trim();
+
+  // If input is an HTTP/HTTPS URL, pre-fetch it server-side to guarantee valid base64 payload
+  if (cleanBase64.startsWith('http://') || cleanBase64.startsWith('https://')) {
+    try {
+      const imgRes = await fetch(cleanBase64);
+      if (!imgRes.ok) {
+        throw new Error(`Remote image returned HTTP status ${imgRes.status}: ${imgRes.statusText}`);
+      }
+      const arrayBuffer = await imgRes.arrayBuffer();
+      cleanBase64 = Buffer.from(arrayBuffer).toString('base64');
+    } catch (fetchErr: any) {
+      throw new Error(`Unable to fetch image from URL: ${fetchErr?.message || 'Network error'}`);
+    }
+  } else if (cleanBase64.includes('base64,')) {
+    // Strip data URI scheme prefix (e.g., data:image/jpeg;base64,)
+    cleanBase64 = cleanBase64.split('base64,')[1].trim();
+  }
+
+  if (!cleanBase64) {
+    throw new Error('Image data could not be parsed into a valid base64 representation.');
   }
 
   const payload = {
     api_key: apiKey,
     inputs: {
-      image: isUrl ? { type: 'url', value: imageData } : { type: 'base64', value: cleanBase64 },
+      image: { type: 'base64', value: cleanBase64 },
     },
   };
 
@@ -448,8 +466,14 @@ export async function executeRoboflowWorkflow(
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Roboflow Workflow returned HTTP ${response.status}: ${errorText || response.statusText}`);
+    let errorDetail = '';
+    try {
+      const errJson = await response.json();
+      errorDetail = errJson.message || errJson.error || JSON.stringify(errJson);
+    } catch {
+      errorDetail = await response.text();
+    }
+    throw new Error(`Roboflow Workflow returned HTTP ${response.status}: ${errorDetail || response.statusText}`);
   }
 
   const responseData = await response.json();
