@@ -21,6 +21,7 @@ export const AuthScreen: React.FC = () => {
     resendConfirmationEmail,
     emailConfirmationPending,
     clearEmailConfirmationPending,
+    isSupabaseLive,
   } = useAuth();
 
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
@@ -206,6 +207,28 @@ export const AuthScreen: React.FC = () => {
           </div>
         ) : (
           <div className="p-8 space-y-6">
+            {/* Missing Supabase Configuration Alert */}
+            {!isSupabaseLive && (
+              <div className="p-4 bg-amber-50 border border-amber-300 rounded-2xl text-xs text-amber-900 space-y-2">
+                <div className="flex items-center gap-2 font-bold text-amber-950">
+                  <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span>Supabase Environment Configuration Required</span>
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  Supabase credentials (<code className="font-mono bg-amber-100 px-1 py-0.5 rounded text-amber-950 font-bold">VITE_SUPABASE_URL</code> and <code className="font-mono bg-amber-100 px-1 py-0.5 rounded text-amber-950 font-bold">VITE_SUPABASE_ANON_KEY</code>) are missing from your environment.
+                </p>
+                <div className="text-[11px] bg-amber-100/70 p-2.5 rounded-xl border border-amber-200 text-amber-950 space-y-1">
+                  <div className="font-semibold">To configure for Vercel / Production:</div>
+                  <ol className="list-decimal list-inside space-y-0.5 text-[10px]">
+                    <li>Open your Vercel Dashboard &rarr; Project Settings &rarr; Environment Variables</li>
+                    <li>Add <span className="font-mono font-bold">VITE_SUPABASE_URL</span></li>
+                    <li>Add <span className="font-mono font-bold">VITE_SUPABASE_ANON_KEY</span></li>
+                    <li>Trigger a new deployment or redeploy</li>
+                  </ol>
+                </div>
+              </div>
+            )}
+
             {/* Mode Switcher Tabs */}
             <div className="flex rounded-xl bg-slate-100 p-1 text-xs font-semibold">
               <button
