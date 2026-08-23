@@ -23,6 +23,7 @@ import {
   GraduationCap,
   Landmark,
   FileCheck,
+  Trash2,
 } from 'lucide-react';
 
 interface BuildingsViewProps {
@@ -30,6 +31,7 @@ interface BuildingsViewProps {
   setActiveTab: (tab: ActiveTab) => void;
   onSelectBuilding: (building: Building) => void;
   onAddBuilding?: (building: Building) => void;
+  onDeleteBuilding?: (buildingId: string) => void;
 }
 
 export const BuildingsView: React.FC<BuildingsViewProps> = ({
@@ -37,6 +39,7 @@ export const BuildingsView: React.FC<BuildingsViewProps> = ({
   setActiveTab,
   onSelectBuilding,
   onAddBuilding,
+  onDeleteBuilding,
 }) => {
   const [cityFilter, setCityFilter] = useState<string>('All');
   const [riskFilter, setRiskFilter] = useState<string>('All');
@@ -390,6 +393,21 @@ export const BuildingsView: React.FC<BuildingsViewProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2">
+                    {onDeleteBuilding && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm(`Are you sure you want to remove "${building.name}" (${building.code}) from your registered infrastructure database?`)) {
+                            onDeleteBuilding(building.id);
+                          }
+                        }}
+                        title="Delete asset"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                     {isUnassessed ? (
                       <button
                         type="button"

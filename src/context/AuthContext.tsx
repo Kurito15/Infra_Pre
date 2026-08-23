@@ -117,7 +117,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (error) {
-        console.error('Supabase signInWithPassword error:', error.message);
+        console.warn('Supabase signInWithPassword:', error.message);
         if (error.message.toLowerCase().includes('email not confirmed')) {
           setEmailConfirmationPending(email.trim());
           return { error: 'Please check your inbox and confirm your email address before signing in.' };
@@ -181,7 +181,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (error) {
-        console.error('Supabase signUp error:', error.message);
+        const lowerMsg = (error.message || '').toLowerCase();
+        if (lowerMsg.includes('rate limit') || lowerMsg.includes('over_email_send_rate_limit')) {
+          console.warn('Supabase sign-up email rate limit reached. Checking if user account already exists...');
+          // Try signing in in case the account was already provisioned
+          try {
+            const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+              email: email.trim(),
+              password,
+            });
+            if (!signInErr && signInData.user && signInData.session) {
+              setUser(mapSupabaseUser(signInData.user));
+              setEmailConfirmationPending(null);
+              return { message: 'Account signed in successfully.' };
+            }
+            if (signInErr && (signInErr.message.toLowerCase().includes('email not confirmed') || signInErr.message.toLowerCase().includes('not confirmed'))) {
+              setEmailConfirmationPending(email.trim());
+              return {
+                requireEmailConfirmation: true,
+                message: 'Your account was already created! Verification emails are temporarily throttled by Supabase. Please check your inbox or spam for the previously sent confirmation link.',
+              };
+            }
+          } catch {
+            // Silently ignore fallback sign-in attempt errors
+          }
+
+          return {
+            error: 'Supabase email rate limit reached. If your account was already created, please Switch to Sign In. Otherwise, check your inbox/spam for a previously received confirmation link, or wait a few minutes before retrying.',
+          };
+        }
+
+        if (lowerMsg.includes('user already registered') || lowerMsg.includes('already exists')) {
+          console.warn('Supabase signUp: user already registered.');
+          return {
+            error: 'An account with this email address already exists. Please switch to Sign In.',
+          };
+        }
+
+        console.warn('Supabase signUp:', error.message);
         return { error: error.message };
       }
 
@@ -224,13 +261,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (error) {
-        console.error('Supabase resetPassword error:', error.message);
+        console.warn('Supabase resetPassword:', error.message);
+        const lowerMsg = (error.message || '').toLowerCase();
+        if (lowerMsg.includes('rate limit') || lowerMsg.includes('over_email_send_rate_limit')) {
+          return { error: 'Email rate limit exceeded. Please wait a few minutes before requesting another password reset email.' };
+        }
         return { error: error.message };
       }
 
       return { message: `Password reset instructions have been sent to ${email.trim()}. Please check your inbox.` };
     } catch (err: any) {
-      console.error('Reset password exception:', err?.message || err);
+      console.warn('Reset password exception:', err?.message || err);
       return { error: err?.message || 'Failed to dispatch reset email.' };
     }
   };
@@ -250,7 +291,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (error) {
-        console.error('Supabase resend confirmation error:', error.message);
+        console.warn('Supabase resend confirmation:', error.message);
+        const lowerMsg = (error.message || '').toLowerCase();
+        if (lowerMsg.includes('rate limit') || lowerMsg.includes('over_email_send_rate_limit')) {
+          return { error: 'Email rate limit exceeded. Please wait a few minutes before requesting another verification email, or check your spam/junk folder.' };
+        }
         return { error: error.message };
       }
 

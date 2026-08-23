@@ -1,5 +1,5 @@
 export default async function handler(req: any, res: any) {
-  const apiKey = process.env.ROBOFLOW_API_KEY;
+  const apiKey = process.env.ROBOFLOW_API_KEY || 'hFTl5s6IVgFqAXKmxfyj';
   const workflowUrl =
     process.env.ROBOFLOW_WORKFLOW_URL ||
     'https://serverless.roboflow.com/kumar-ritovash/workflows/building-infrastructure-defects-logic';

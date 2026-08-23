@@ -1,110 +1,104 @@
-# StructuralAI - Project Status & Implementation Verification
+# StructuralAI - Production Deployment Status & Architecture Specification
 
-**Project Name:** StructuralAI — Indian Infrastructure Structural Health & Forensic Audit Portal  
-**Compliance Standards:** IS 456:2000 (Plain and Reinforced Concrete), IS 13920:2016 (Ductile Design), IRC 112:2020 (Concrete Road Bridges), CPWD Maintenance Manual  
-**Architecture:** Full-Stack (React 19 + TypeScript + Tailwind CSS + Express backend with Vercel serverless compatibility + Roboflow Computer Vision Workflow + Gemini AI Forensic Reporting Engine + Supabase Auth & Cloud Database)
-
----
-
-## 1. Production Build & Vercel Deployment Status
-
-- **Build Status:** ✅ Production build (`npm run build`) compiles cleanly without TypeScript errors or missing modules.
-- **Vercel Serverless Architecture:** All backend API handlers in `/api/*.ts` execute seamlessly as Vercel serverless Node.js functions.
-- **Vercel Configuration (`vercel.json`):** Configured with `"buildCommand": "vite build"`, `"outputDirectory": "dist"`, and API route rewrites to `/api/$1` and SPA fallback to `/index.html`.
-- **Zero Localhost Hardcoding:** All frontend data fetching and inference workflows utilize relative paths (e.g. `/api/analyze`, `/api/generate-report`, `/api/telemetry`, `/api/roboflow/test`).
+## 1. Exact Root Cause of the Vercel & Production Issues
+1. **Frontend Environment Variable Ingestion**: In client-side Vite builds, variables must strictly follow the `import.meta.env.VITE_*` convention and be available during build time. Previously, configurations were split or missing fallbacks, causing Supabase initialization failures when deployed without manual Vite build parameters.
+2. **Server-Side Secret Isolation vs. Serverless Functions**: Roboflow and Gemini API keys must **never** be exposed via `VITE_` variables or imported into browser bundles. On Vercel, requests to `/api/*` are handled by Vercel Serverless Functions reading runtime environment variables (`process.env.ROBOFLOW_API_KEY`, `process.env.GEMINI_API_KEY`), while local/dev environments route through `server.ts`.
+3. **Supabase Authentication & Built-in SMTP Throttling**: On default Supabase projects without custom SMTP, Supabase enforces an hourly email rate limit (`over_email_send_rate_limit`). When testing repeated sign-ups, this returned rate limit errors unless handled with clear status guidance and direct sign-in routing.
 
 ---
 
-## 2. Authentication System (Strict Supabase Auth Only)
-
-- **Supabase-Only Verification:** `MockAuth`, `MockUserSession`, and localStorage authentication fallbacks have been completely excised.
-- **Strict Access Control:** Unauthenticated users are strictly barred from all dashboard routes and redirected directly to the Sign In / Sign Up portal (`AuthScreen`).
-- **Session Lifecycle:** App startup invokes `supabase.auth.getSession()`. Real-time session synchronization is driven by `supabase.auth.onAuthStateChange()`.
-- **User Creation:** User signups go through `supabase.auth.signUp()` with metadata stored in `user_metadata` (`full_name`, `role`, `organization`, `badge_number`), registering in Supabase Auth Users.
-- **Email Verification:** Supports Supabase email confirmation flows and real email resend via `supabase.auth.resend({ type: 'signup', email })`.
-- **Sign Out:** `supabase.auth.signOut()` clears the session and instantly returns to the unauthenticated login portal.
-
----
-
-## 3. API Routes Specification
-
-| Route | Method | Purpose | Vercel Serverless File |
-| :--- | :--- | :--- | :--- |
-| `/api/analyze` | `POST` | Executes Roboflow Serverless Workflow with server-side `ROBOFLOW_API_KEY`, normalizes CAD coordinates, calculates crack aperture / length / coverage, and computes IS 456 Structural Health Index & risk scores. | `/api/analyze.ts` |
-| `/api/generate-report` | `POST` | Generates official 9-section forensic audit certificate using Gemini 2.5 Flash (`GEMINI_API_KEY`) with deterministic engineering fallback. | `/api/generate-report.ts` |
-| `/api/telemetry` | `GET`, `POST` | Fetches active structural IoT telemetry streams (accelerometers, optical crack tell-tales, concrete strain gauges, inclinometers). | `/api/telemetry.ts` |
-| `/api/roboflow/test` | `POST` | Direct connectivity health check verifying serverless Roboflow workflow latency and HTTP status. | `/api/roboflow/test.ts` |
-| `/api/health` | `GET` | Service health status and environment configuration probe. | `/api/health.ts` |
+## 2. Files Changed & Verified
+- `src/lib/supabase.ts`: Standardized Vite client initialization via `import.meta.env.VITE_SUPABASE_URL` and `import.meta.env.VITE_SUPABASE_ANON_KEY` with project defaults and strict configuration state detection.
+- `src/context/AuthContext.tsx`: Pure Supabase authentication implementation using `supabase.auth.signUp()`, `signInWithPassword()`, `getSession()`, `onAuthStateChange()`, `signOut()`, and `resend()`. No mock authentication or fake sessions.
+- `src/components/auth/AuthScreen.tsx` & `src/components/auth/AuthModal.tsx`: Real Supabase email confirmation flows and actionable error messaging.
+- `api/analyze.ts` & `api/analyze-inspection.ts`: Vercel serverless functions executing the official Roboflow workflow (`https://serverless.roboflow.com/kumar-ritovash/workflows/building-infrastructure-defects-logic`) strictly server-side using `process.env.ROBOFLOW_API_KEY`.
+- `api/generate-report.ts`: Vercel serverless function executing Gemini forensic reasoning server-side with `process.env.GEMINI_API_KEY` and mandatory structural engineering disclaimers.
+- `api/telemetry.ts`: Sensor telemetry endpoint for environmental and dynamic monitoring.
+- `api/roboflow/test.ts`: Health check endpoint for verifying Roboflow workflow connectivity without exposing credentials.
+- `server.ts`: Express + Vite development bridge enabling local execution that mirrors Vercel serverless routing.
+- `vercel.json`: Clean build and routing configuration for Vercel deployment.
+- `.env.example`: Secure environment configuration template with non-sensitive placeholders.
 
 ---
 
-## 4. Required Environment Variables
-
-All sensitive API keys remain strictly server-side and are documented in `.env.example`:
-
-| Variable | Scope | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `ROBOFLOW_API_KEY` | Server-Side Secret | Yes (for live inference) | Roboflow API key for serverless workflow execution. Never exposed to client. |
-| `ROBOFLOW_WORKFLOW_URL` | Server-Side / Config | Optional (defaults to workflow) | `https://serverless.roboflow.com/kumar-ritovash/workflows/general-segmentation-api-2` |
-| `GEMINI_API_KEY` | Server-Side Secret | Optional | Google Gemini API key for AI forensic report synthesis. Falls back to deterministic IS 456 engine if not provided. |
-| `VITE_SUPABASE_URL` | Client & Server (Public) | Yes (for live Supabase) | Project URL for Supabase Auth and PostgreSQL storage. |
-| `VITE_SUPABASE_ANON_KEY` | Client & Server (Public) | Yes (for live Supabase) | Supabase anonymous public client key for user authentication. |
+## 3. Production Build Result
+- **TypeScript Typecheck (`tsc --noEmit`)**: Completed with **0 errors**.
+- **Production Compilation (`npm run build`)**: Succeeded. Output static assets placed in `dist/` and standalone backend entry bundled cleanly.
 
 ---
 
-## 5. Roboflow & StructuralAI Risk Engine Pipeline
+## 4. Required Vercel Environment Variables
 
-```
-User Uploads Real Structural Image
-       │
-       ▼
-[Express / Vercel Serverless: POST /api/analyze]
-       │
-       ├─► [1] Roboflow Serverless Workflow API
-       │       ├── Endpoint: https://serverless.roboflow.com/kumar-ritovash/workflows/general-segmentation-api-2
-       │       ├── Uses server-side process.env.ROBOFLOW_API_KEY
-       │       └── Returns: predictions (x, y, width, height, confidence, class, points/masks)
-       │
-       ├─► [2] StructuralAI Physics & Risk Engine
-       │       ├── Normalizes bounding coordinates to standard CAD space
-       │       ├── Quantifies crack length (mm), aperture width (mm), surface area coverage (%)
-       │       ├── IS 456:2000 limit state classification (Critical >2.0mm, High 0.5-2.0mm, Moderate <0.5mm, Low)
-       │       ├── Calculates Composite Structural Health Index (SHI: 0-100) & Risk Matrix Score
-       │       └── Formulates IS 456 / IRC 112 remediation protocols & CPWD safety directives
-       │
-       ▼
-[Supabase Cloud Database & Storage]
-       ├── `inspections` (Inspection header, overall risk, composite SHI, diagnosis summary)
-       ├── `defects` (Individual defect rows with bounding boxes, physical metrics, remediation protocols)
-       ├── `reports` (Certified CPWD structural compliance audit certificate)
-       └── `buildings` (Auto-updated SHI, risk status, inspection count, critical defect count)
-       │
-       ▼
-[Interactive Frontend UI]
-       ├── Dashboard KPIs & Real-time Trends
-       ├── Asset B-203 Deep Dive (Real defects & crack growth history)
-       ├── Zonal Risk Monitor & Hotlist
-       └── Official CPWD Compliance Certificates & Downloadable Reports
-```
+Set these in your **Vercel Project Settings &rarr; Environment Variables**:
+
+| Variable Name | Environment | Description / Fallback |
+| :--- | :--- | :--- |
+| `ROBOFLOW_API_KEY` | Server (Production, Preview, Dev) | `hFTl5s6IVgFqAXKmxfyj` |
+| `ROBOFLOW_WORKFLOW_URL` | Server (Optional) | `https://serverless.roboflow.com/kumar-ritovash/workflows/building-infrastructure-defects-logic` |
+| `GEMINI_API_KEY` | Server (Production, Preview, Dev) | `AIzaSyCwtgEjQGym37IAI1EovuZgQKWczg14zHE` |
+| `VITE_SUPABASE_URL` | Frontend (Build & Runtime) | `https://dsoxqjkjujcmqxikzxdd.supabase.co` |
+| `VITE_SUPABASE_ANON_KEY` | Frontend (Build & Runtime) | `sb_publishable_-peCUvZj6xxyspvktIMdvQ_HI5h6I5t` |
+
+*Note: Never expose `ROBOFLOW_API_KEY` or `GEMINI_API_KEY` with a `VITE_` prefix on the client.*
 
 ---
 
-## 6. Forensic Report Structure (9 Required Sections)
+## 5. Required Supabase Authentication Settings
 
-1. **Building Information:** Asset Name, Code, Category, Structural System, Locality, Year Built, Floors/Spans, Owner
-2. **Inspection Summary:** Certificate ID, Inspected Structural Element, Location/Grid, Lead Auditor, Badge ID, Date, SHI Score, Risk Level
-3. **Detected Defects:** Itemized Roboflow defect detections, physical crack aperture (mm), path length (mm), coverage (%), IS 456 compliance
-4. **AI Assessment:** Engineering diagnosis, load transfer mechanics, and material distress causes
-5. **Structural Risk:** IS 456 & ISO 31000 risk matrix evaluation, potential failure modes
-6. **Sensor Observations:** Dynamic sensor baseline telemetry, vibration (g), displacement (mm), strain (με)
-7. **Recommended Actions:** Step-by-step IS 456 / IRC 112 repair methodology (CFRP wrap, high-pressure epoxy grouting, rebar passivation)
-8. **Priority & Timeframe:** Mandatory remediation urgency (e.g. Immediate 48 Hours, Scheduled 14 Days)
-9. **Structural Engineer Disclaimer:** Non-destructive testing notice and legal certification boundary
+*(These settings must be verified in the **Supabase Dashboard** for project `dsoxqjkjujcmqxikzxdd`)*:
+
+1. **Authentication &rarr; Providers &rarr; Email**:
+   - **Enable Email provider**: `Enabled`
+   - **Allow new users to sign up**: `Enabled`
+   - **Confirm email**: `Enabled` (Require email verification before user login)
+2. **Authentication &rarr; URL Configuration**:
+   - **Site URL**: `https://your-app.vercel.app` (or your production custom domain)
+   - **Redirect URLs**: Add `https://your-app.vercel.app/**` and `http://localhost:3000/**`
 
 ---
 
-## 7. Known Limitations & Operating Boundaries
+## 6. Required SMTP Configuration (For Production Email Delivery)
 
-1. **Roboflow Cold-Start Latency:** Serverless Roboflow workflow execution may take 1.5–3.5s depending on image resolution and cold-start state.
-2. **Non-Destructive Preliminary Boundary:** In accordance with IS 456:2000 and CPWD regulations, AI-assisted computer vision crack detection provides non-destructive preliminary forensic assessment and must be accompanied by on-site core sampling (IS 516) and rebound hammer testing (IS 13311 Part 2) prior to structural load modifications.
-3. **Vercel Serverless Function Payload:** Images uploaded as base64 strings should remain under 4.5MB to stay within Vercel's standard serverless function payload limit.
+*Supabase includes a default built-in SMTP service limited to a few emails per hour. For production scale:*
+
+1. Go to **Supabase Dashboard &rarr; Project Settings &rarr; Authentication &rarr; SMTP Settings**.
+2. Enable **Custom SMTP**.
+3. Configure your transactional email provider (e.g., Resend, SendGrid, Amazon SES, or Postmark):
+   - **Sender email**: `inspections@yourdomain.com`
+   - **Sender name**: `StructuralAI Forensic Audits`
+   - **Host, Port, User, Password** provided by your SMTP service.
+
+---
+
+## 7. Row Level Security (RLS) & Multi-Tenant Data Isolation
+
+Strict database-level isolation is enforced via Supabase PostgreSQL Row Level Security (RLS):
+
+- **Ownership Column**: `user_id UUID REFERENCES auth.users(id)`
+- **RLS Policies**:
+  - **SELECT**: `USING (user_id = auth.uid())`
+  - **INSERT**: `WITH CHECK (user_id = auth.uid())`
+  - **UPDATE**: `USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid())`
+  - **DELETE**: `USING (user_id = auth.uid())`
+- **Protected Tables**: `buildings`, `inspections`, `defects`, `telemetry`, `reports`, `profiles`.
+- **Migration SQL**: Located at `supabase/migrations/20260823_strict_rls_policies.sql`.
+
+---
+
+## 8. Production API Endpoints (Relative Paths)
+
+- `POST /api/analyze`: Accepts `{ image: string, element?: string }`, invokes Roboflow workflow server-side, and returns structured defect analysis.
+- `POST /api/generate-report`: Accepts building metadata, inspection results, detected defects, and telemetry, producing a comprehensive AI forensic report with IS 456 / IS 13920 compliance.
+- `GET /api/telemetry`: Retrieves real-time sensor metrics (accelerometers, tell-tale gauges, strain sensors).
+- `POST /api/roboflow/test`: Verifies Roboflow workflow connectivity.
+- `GET /api/health`: Health status of server-side integrations.
+
+---
+
+## 8. Remaining Manual Deployment Steps
+
+1. Push the repository to your Git provider (GitHub / GitLab).
+2. Import the repository into **Vercel**.
+3. In **Vercel &rarr; Settings &rarr; Environment Variables**, add `ROBOFLOW_API_KEY`, `GEMINI_API_KEY`, `VITE_SUPABASE_URL`, and `VITE_SUPABASE_ANON_KEY`.
+4. Deploy the project on Vercel.
+5. Update the **Site URL** and **Redirect URLs** in the Supabase Authentication Dashboard to match your Vercel deployment URL.

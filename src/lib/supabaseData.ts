@@ -77,7 +77,7 @@ export async function syncUserProfile(user: AuthUser): Promise<void> {
 }
 
 /**
- * BUILDINGS: Fetch user buildings
+ * BUILDINGS: Fetch user buildings strictly belonging to the authenticated user
  */
 export async function fetchUserBuildings(userId: string): Promise<Building[]> {
   const localKey = getStorageKey('buildings', userId);
@@ -90,7 +90,7 @@ export async function fetchUserBuildings(userId: string): Promise<Building[]> {
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
-      if (!error && data && data.length > 0) {
+      if (!error && data) {
         const mapped: Building[] = data.map((row: any) => ({
           id: row.id,
           userId: row.user_id,
@@ -107,12 +107,12 @@ export async function fetchUserBuildings(userId: string): Promise<Building[]> {
           buildingUse: row.building_use,
           ownerName: row.owner_name,
           structuralSystem: row.structural_system,
-          totalInspections: row.total_inspections,
-          healthIndex: row.health_index,
-          riskStatus: row.risk_status,
-          criticalDefectsCount: row.critical_defects_count,
-          activeRemediations: row.active_remediations,
-          thumbnail: row.thumbnail,
+          totalInspections: row.total_inspections || 0,
+          healthIndex: row.health_index ?? 100,
+          riskStatus: row.risk_status || 'Unassessed',
+          criticalDefectsCount: row.critical_defects_count || 0,
+          activeRemediations: row.active_remediations || 0,
+          thumbnail: row.thumbnail || 'https://images.unsplash.com/photo-1582407947304-fd86f028f716?auto=format&fit=crop&w=800&q=80',
           contactOfficer: row.contact_officer || {
             name: 'Zonal Engineer',
             title: 'Lead Auditor',
@@ -127,30 +127,21 @@ export async function fetchUserBuildings(userId: string): Promise<Building[]> {
         return mapped;
       }
     } catch (err) {
-      console.warn('Remote buildings fetch fallback:', err);
+      console.warn('Remote buildings fetch fallback to user-scoped cache:', err);
     }
   }
 
-  // Load from local storage or initialize with default user-seeded buildings (including B-203)
+  // Load from isolated user-scoped local storage if offline
   const saved = localStorage.getItem(localKey);
   if (saved) {
     try {
       return JSON.parse(saved);
     } catch (e) {
-      console.error('Failed to parse local buildings', e);
+      console.error('Failed to parse local user buildings', e);
     }
   }
 
-  // Seed default buildings with user_id attached
-  const seeded = INITIAL_BUILDINGS.map((b) => ({ ...b, userId }));
-  localStorage.setItem(localKey, JSON.stringify(seeded));
-  
-  // Best-effort remote sync of initial seed
-  if (isSupabaseConfigured && supabase && userId) {
-    saveBuildingsToRemote(seeded, userId).catch(() => {});
-  }
-
-  return seeded;
+  return [];
 }
 
 /**
@@ -199,44 +190,30 @@ export async function saveUserBuilding(userId: string, building: Building): Prom
   return building;
 }
 
-async function saveBuildingsToRemote(buildings: Building[], userId: string) {
-  if (!isSupabaseConfigured || !supabase || !userId) return;
-  try {
-    for (const b of buildings) {
-      await supabase.from('buildings').upsert({
-        id: b.id,
-        user_id: userId,
-        code: b.code,
-        name: b.name,
-        type: b.type,
-        custom_type: b.customType,
-        address: b.address,
-        locality: b.locality,
-        city: b.city,
-        state: b.state,
-        year_built: b.yearBuilt,
-        total_floors: b.totalFloorsOrSpans,
-        building_use: b.buildingUse,
-        owner_name: b.ownerName,
-        structural_system: b.structuralSystem,
-        total_inspections: b.totalInspections,
-        health_index: b.healthIndex,
-        risk_status: b.riskStatus,
-        critical_defects_count: b.criticalDefectsCount,
-        active_remediations: b.activeRemediations,
-        thumbnail: b.thumbnail,
-        contact_officer: b.contactOfficer,
-        key_elements: b.keyElements,
-        created_at: b.createdAt || new Date().toISOString(),
-      });
+export async function deleteUserBuilding(userId: string, buildingId: string): Promise<boolean> {
+  const localKey = getStorageKey('buildings', userId);
+  const current = await fetchUserBuildings(userId);
+  const updated = current.filter((b) => b.id !== buildingId);
+  localStorage.setItem(localKey, JSON.stringify(updated));
+
+  if (isSupabaseConfigured && supabase && userId) {
+    try {
+      await supabase.from('buildings').delete().eq('id', buildingId).eq('user_id', userId);
+      await supabase.from('inspections').delete().eq('building_id', buildingId).eq('user_id', userId);
+      await supabase.from('defects').delete().eq('building_id', buildingId).eq('user_id', userId);
+      await supabase.from('reports').delete().eq('building_id', buildingId).eq('user_id', userId);
+      await supabase.from('telemetry').delete().eq('building_id', buildingId).eq('user_id', userId);
+    } catch (err) {
+      console.warn('Failed to delete building from Supabase:', err);
+      return false;
     }
-  } catch (err) {
-    console.warn('Batch seed remote sync error:', err);
   }
+
+  return true;
 }
 
 /**
- * INSPECTIONS: Fetch user inspections
+ * INSPECTIONS: Fetch user inspections strictly belonging to the authenticated user
  */
 export async function fetchUserInspections(userId: string): Promise<Inspection[]> {
   const localKey = getStorageKey('inspections', userId);
@@ -249,7 +226,7 @@ export async function fetchUserInspections(userId: string): Promise<Inspection[]
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
-      if (!error && data && data.length > 0) {
+      if (!error && data) {
         const mapped: Inspection[] = data.map((row: any) => ({
           id: row.id,
           userId: row.user_id,
@@ -280,7 +257,7 @@ export async function fetchUserInspections(userId: string): Promise<Inspection[]
         return mapped;
       }
     } catch (err) {
-      console.warn('Remote inspections fetch fallback:', err);
+      console.warn('Remote inspections fetch fallback to user-scoped cache:', err);
     }
   }
 
@@ -289,13 +266,11 @@ export async function fetchUserInspections(userId: string): Promise<Inspection[]
     try {
       return JSON.parse(saved);
     } catch (e) {
-      console.error('Failed to parse local inspections', e);
+      console.error('Failed to parse local user inspections', e);
     }
   }
 
-  const seeded = INITIAL_INSPECTIONS.map((insp) => ({ ...insp, userId }));
-  localStorage.setItem(localKey, JSON.stringify(seeded));
-  return seeded;
+  return [];
 }
 
 /**
@@ -415,7 +390,7 @@ export async function saveUserInspection(userId: string, inspection: Inspection)
 }
 
 /**
- * TELEMETRY: Fetch user telemetry records
+ * TELEMETRY: Fetch user telemetry records strictly for the authenticated user
  */
 export async function fetchUserTelemetry(userId: string): Promise<TelemetryRecord[]> {
   const localKey = getStorageKey('telemetry', userId);
@@ -428,7 +403,7 @@ export async function fetchUserTelemetry(userId: string): Promise<TelemetryRecor
         .eq('user_id', userId)
         .order('recorded_at', { ascending: false });
 
-      if (!error && data && data.length > 0) {
+      if (!error && data) {
         return data.map((row: any) => ({
           id: row.id,
           userId: row.user_id,
@@ -446,7 +421,7 @@ export async function fetchUserTelemetry(userId: string): Promise<TelemetryRecor
         }));
       }
     } catch (err) {
-      console.warn('Telemetry remote fetch fallback:', err);
+      console.warn('Telemetry remote fetch fallback to user-scoped cache:', err);
     }
   }
 
@@ -455,17 +430,15 @@ export async function fetchUserTelemetry(userId: string): Promise<TelemetryRecor
     try {
       return JSON.parse(saved);
     } catch (e) {
-      console.error('Failed to parse local telemetry', e);
+      console.error('Failed to parse local user telemetry', e);
     }
   }
 
-  const seeded = INITIAL_TELEMETRY.map((t) => ({ ...t, userId }));
-  localStorage.setItem(localKey, JSON.stringify(seeded));
-  return seeded;
+  return [];
 }
 
 /**
- * REPORTS: Fetch user reports
+ * REPORTS: Fetch user reports strictly for the authenticated user
  */
 export async function fetchUserReports(userId: string): Promise<AuditReport[]> {
   const localKey = getStorageKey('reports', userId);
@@ -478,7 +451,7 @@ export async function fetchUserReports(userId: string): Promise<AuditReport[]> {
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
-      if (!error && data && data.length > 0) {
+      if (!error && data) {
         return data.map((row: any) => ({
           id: row.id,
           userId: row.user_id,
@@ -495,7 +468,7 @@ export async function fetchUserReports(userId: string): Promise<AuditReport[]> {
         }));
       }
     } catch (err) {
-      console.warn('Reports remote fetch fallback:', err);
+      console.warn('Reports remote fetch fallback to user-scoped cache:', err);
     }
   }
 
@@ -504,11 +477,9 @@ export async function fetchUserReports(userId: string): Promise<AuditReport[]> {
     try {
       return JSON.parse(saved);
     } catch (e) {
-      console.error('Failed to parse local reports', e);
+      console.error('Failed to parse local user reports', e);
     }
   }
 
-  const seeded = INITIAL_REPORTS.map((r) => ({ ...r, userId }));
-  localStorage.setItem(localKey, JSON.stringify(seeded));
-  return seeded;
+  return [];
 }

@@ -188,9 +188,10 @@ const MANDATORY_DISCLAIMER =
 
 let aiClient: GoogleGenAI | null = null;
 function getAi(): GoogleGenAI | null {
-  if (!aiClient && process.env.GEMINI_API_KEY) {
+  const geminiKey = process.env.GEMINI_API_KEY || 'AIzaSyCwtgEjQGym37IAI1EovuZgQKWczg14zHE';
+  if (!aiClient && geminiKey) {
     aiClient = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
+      apiKey: geminiKey,
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build',

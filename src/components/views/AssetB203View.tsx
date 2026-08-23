@@ -38,7 +38,7 @@ import {
 } from 'recharts';
 
 interface AssetB203ViewProps {
-  building: Building;
+  building?: Building | null;
   inspections: Inspection[];
   telemetry?: TelemetryRecord[];
   setActiveTab: (tab: ActiveTab) => void;
@@ -55,9 +55,33 @@ export const AssetB203View: React.FC<AssetB203ViewProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'defects' | 'cracks' | 'telemetry' | 'history' | 'recommendations'>('defects');
   const [selectedElement, setSelectedElement] = useState<string>('all');
 
+  if (!building) {
+    return (
+      <div className="p-6 space-y-6 max-w-7xl mx-auto">
+        <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center shadow-xs">
+          <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-4">
+            <Building2 className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">No Registered Buildings in Your Account</h2>
+          <p className="text-slate-600 text-sm max-w-md mx-auto mb-6">
+            You haven't registered any infrastructure assets yet. Register a building to perform structural deep-dive monitoring, sensor telemetry, and defect analysis.
+          </p>
+          <button
+            type="button"
+            onClick={() => setActiveTab('buildings')}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-xl transition-all shadow-sm cursor-pointer"
+          >
+            <PlusCircle className="w-4 h-4" />
+            Go to Buildings & Register Asset
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Filter inspections for B-203
   const b203Inspections = inspections.filter(
-    (i) => i.buildingCode === 'B-203' || i.buildingId === building.id || i.buildingId === 'bld_b203'
+    (i) => i.buildingCode === 'B-203' || (building && (i.buildingId === building.id || i.buildingId === 'bld_b203'))
   );
 
   // Extract all real defects from B-203 inspections

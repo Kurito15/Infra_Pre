@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ActiveTab, Building, Inspection } from './types';
-import { INITIAL_BUILDINGS, INITIAL_INSPECTIONS } from './data/mockData';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import {
   fetchUserBuildings,
   saveUserBuilding,
+  deleteUserBuilding,
   fetchUserInspections,
   saveUserInspection,
   syncUserProfile,
@@ -29,19 +29,22 @@ function MainApplication() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [selectedInspectionForModal, setSelectedInspectionForModal] = useState<Inspection | null>(null);
 
-  // Buildings and Inspections state
-  const [buildings, setBuildings] = useState<Building[]>(INITIAL_BUILDINGS);
-  const [inspections, setInspections] = useState<Inspection[]>(INITIAL_INSPECTIONS);
+  // Buildings and Inspections state - strictly empty initially to guarantee per-user isolation
+  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [inspections, setInspections] = useState<Inspection[]>([]);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
 
   // Target building for specific deep-dive views
-  const [selectedBuilding, setSelectedBuilding] = useState<Building>(
-    buildings.find((b) => b.code === 'B-203') || buildings[0]
-  );
+  const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
 
-  // Load user data on auth user change / mount
+  // Load authenticated user's records on auth user change / mount
   const loadUserData = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      setBuildings([]);
+      setInspections([]);
+      setSelectedBuilding(null);
+      return;
+    }
     const userId = user.id;
     setIsLoadingData(true);
     try {
@@ -52,18 +55,14 @@ function MainApplication() {
         fetchUserInspections(userId),
       ]);
 
-      if (userBuildings && userBuildings.length > 0) {
-        setBuildings(userBuildings);
-        const b203 = userBuildings.find((b) => b.code === 'B-203');
-        if (b203) {
-          setSelectedBuilding(b203);
-        } else {
-          setSelectedBuilding(userBuildings[0]);
-        }
-      }
+      setBuildings(userBuildings || []);
+      setInspections(userInspections || []);
 
-      if (userInspections) {
-        setInspections(userInspections);
+      if (userBuildings && userBuildings.length > 0) {
+        const b203 = userBuildings.find((b) => b.code === 'B-203');
+        setSelectedBuilding(b203 || userBuildings[0]);
+      } else {
+        setSelectedBuilding(null);
       }
     } catch (err) {
       console.error('Error loading Supabase user data:', err);
@@ -75,16 +74,24 @@ function MainApplication() {
   useEffect(() => {
     if (user) {
       loadUserData();
+    } else {
+      setBuildings([]);
+      setInspections([]);
+      setSelectedBuilding(null);
     }
   }, [user, loadUserData]);
 
   // Handle adding a new building (+ Add Building)
   const handleAddBuilding = async (newBuilding: Building) => {
-    const userId = user?.id || 'default_guest';
+    if (!user) return;
+    const userId = user.id;
     const buildingWithUser = { ...newBuilding, userId };
 
     // Optimistic state update
     setBuildings((prev) => [buildingWithUser, ...prev.filter((b) => b.id !== buildingWithUser.id)]);
+    if (!selectedBuilding) {
+      setSelectedBuilding(buildingWithUser);
+    }
 
     // Save to Supabase table & local cache
     try {
@@ -94,9 +101,21 @@ function MainApplication() {
     }
   };
 
+  // Handle deleting a building
+  const handleDeleteBuilding = async (buildingId: string) => {
+    if (!user) return;
+    setBuildings((prev) => prev.filter((b) => b.id !== buildingId));
+    setInspections((prev) => prev.filter((i) => i.buildingId !== buildingId));
+    if (selectedBuilding?.id === buildingId) {
+      setSelectedBuilding(buildings.find((b) => b.id !== buildingId) || null);
+    }
+    await deleteUserBuilding(user.id, buildingId);
+  };
+
   // Handle saving a new forensic inspection
   const handleSaveInspection = async (newInspection: Inspection) => {
-    const userId = user?.id || 'default_guest';
+    if (!user) return;
+    const userId = user.id;
     const inspectionWithUser = { ...newInspection, userId };
 
     // Update local inspections list
@@ -108,8 +127,8 @@ function MainApplication() {
         if (b.id === newInspection.buildingId || b.code === newInspection.buildingCode) {
           const newCriticalCount =
             newInspection.overallRiskLevel === 'Critical'
-              ? b.criticalDefectsCount + 1
-              : b.criticalDefectsCount;
+              ? (b.criticalDefectsCount || 0) + 1
+              : b.criticalDefectsCount || 0;
 
           return {
             ...b,
@@ -122,7 +141,7 @@ function MainApplication() {
                 : b.riskStatus === 'Unassessed'
                 ? newInspection.overallRiskLevel
                 : b.riskStatus,
-            totalInspections: b.totalInspections + 1,
+            totalInspections: (b.totalInspections || 0) + 1,
             criticalDefectsCount: newCriticalCount,
             lastInspectionDate: newInspection.date,
           };
@@ -159,7 +178,7 @@ function MainApplication() {
     return <AuthScreen />;
   }
 
-  const b203Building = buildings.find((b) => b.code === 'B-203') || buildings[0];
+  const b203Building = buildings.find((b) => b.code === 'B-203') || selectedBuilding || buildings[0] || null;
   const criticalAlertCount = buildings.filter((b) => b.riskStatus === 'Critical').length;
 
   return (
@@ -220,6 +239,7 @@ function MainApplication() {
                 }
               }}
               onAddBuilding={handleAddBuilding}
+              onDeleteBuilding={handleDeleteBuilding}
             />
           )}
 
