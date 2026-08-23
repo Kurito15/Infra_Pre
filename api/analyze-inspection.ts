@@ -5,13 +5,21 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method not allowed. Use POST.' });
   }
 
-  const { image, imageUrl, element, buildingCode, locationDetails } = req.body || {};
+  let body = req.body;
+  if (typeof body === 'string') {
+    try {
+      body = JSON.parse(body);
+    } catch {
+      // keep body
+    }
+  }
+
+  const { image, imageUrl, element, buildingCode, locationDetails } = body || {};
   const targetImage = image || imageUrl;
 
   if (!targetImage) {
     return res.status(400).json({
-      error: 'Unable to analyze image. Please retry.',
-      message: 'No image data provided for inspection analysis.',
+      error: 'No image data provided for inspection analysis.',
     });
   }
 
@@ -24,8 +32,8 @@ export default async function handler(req: any, res: any) {
   } catch (error: any) {
     console.error('Roboflow Workflow Execution Error (/api/analyze-inspection):', error);
     return res.status(502).json({
-      error: 'Unable to analyze image. Please retry.',
-      message: error?.message || 'Roboflow serverless workflow returned an unexpected response.',
+      error: error?.message || 'Roboflow serverless workflow returned an unexpected response. Please retry.',
+      details: error?.message,
     });
   }
 }

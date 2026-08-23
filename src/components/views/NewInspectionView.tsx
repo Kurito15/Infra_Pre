@@ -23,6 +23,8 @@ import {
   ChevronDown,
   ChevronUp,
   X,
+  PlusCircle,
+  Building2,
 } from 'lucide-react';
 
 interface NewInspectionViewProps {
@@ -41,12 +43,14 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
   const { user } = useAuth();
 
   // Form State
-  const [selectedBuildingId, setSelectedBuildingId] = useState<string>(buildings[0]?.id || 'bld_b203');
-  const [selectedElement, setSelectedElement] = useState<string>('Column C-04 (Basement B2 Primary Shear Column)');
-  const [locationDetails, setLocationDetails] = useState<string>('Basement Level -2, North-East Quad, adjacent to chiller plant');
+  const [selectedBuildingId, setSelectedBuildingId] = useState<string>(buildings[0]?.id || '');
+  const [customBuildingCode, setCustomBuildingCode] = useState<string>('ASSET-01');
+  const [customBuildingName, setCustomBuildingName] = useState<string>('Registered Asset 01');
+  const [selectedElement, setSelectedElement] = useState<string>('Column C-04 (Primary Shear Column)');
+  const [locationDetails, setLocationDetails] = useState<string>('Ground Level, East Facade / Main Grid');
   const [inspectorName, setInspectorName] = useState<string>(user?.fullName || 'Er. Arjun Sharma');
   const [inspectorBadge, setInspectorBadge] = useState<string>(user?.badgeNumber || 'CPWD-AUD-8821');
-  const [inspectorNotes, setInspectorNotes] = useState<string>('Visual inspection of reinforced concrete surface. Examining crack morphology and potential spalling.');
+  const [inspectorNotes, setInspectorNotes] = useState<string>('Visual inspection of reinforced concrete member. Examining crack morphology and potential spalling.');
 
   // Image Upload Modes: 'upload' | 'url'
   const [inputMode, setInputMode] = useState<'upload' | 'url'>('upload');
@@ -128,7 +132,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
     }
   };
 
-  // Image file handler
+  // Optimized Image file handler (downsamples large photos to avoid payload timeouts)
   const handleFileUpload = (file: File) => {
     if (!file.type.startsWith('image/')) {
       setAnalysisError('Please select a valid image file (JPG, PNG, WEBP).');
@@ -138,11 +142,45 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
     setAnalysisError(null);
     const reader = new FileReader();
     reader.onload = (e) => {
-      if (e.target?.result) {
-        setImagePreview(e.target.result as string);
+      const rawDataUrl = e.target?.result as string;
+      if (!rawDataUrl) return;
+
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 1600;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const optimizedDataUrl = canvas.toDataURL('image/jpeg', 0.90);
+          setImagePreview(optimizedDataUrl);
+        } else {
+          setImagePreview(rawDataUrl);
+        }
         setAnalysisResult(null);
         setIsSaved(false);
-      }
+      };
+      img.onerror = () => {
+        setImagePreview(rawDataUrl);
+        setAnalysisResult(null);
+        setIsSaved(false);
+      };
+      img.src = rawDataUrl;
     };
     reader.readAsDataURL(file);
   };
@@ -179,9 +217,11 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
 
     try {
       setScanStep('1/4: Initializing image matrix & resolution scale...');
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 150));
 
-      setScanStep('2/4: Calling Roboflow Workflow: building-infrastructure-defects-logic...');
+      setScanStep('2/4: Calling Roboflow Serverless Workflow: building-infrastructure-defects-logic...');
+
+      const effectiveBuildingCode = currentBuilding?.code || customBuildingCode || 'ASSET-01';
 
       const response = await fetch('/api/analyze', {
         method: 'POST',
@@ -189,7 +229,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
         body: JSON.stringify({
           image: imagePreview,
           element: selectedElement,
-          buildingCode: currentBuilding?.code || 'B-203',
+          buildingCode: effectiveBuildingCode,
           locationDetails,
         }),
       });
@@ -198,13 +238,14 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
 
       if (!response.ok) {
         const errJson = await response.json().catch(() => ({}));
-        throw new Error(errJson.error || errJson.message || 'Unable to analyze image. Please retry.');
+        const detailedMessage = errJson.details || errJson.message || errJson.error || 'Roboflow analysis encountered an issue. Please retry.';
+        throw new Error(detailedMessage);
       }
 
       const data = await response.json();
 
       setScanStep('4/4: Calculating IS 456 crack aperture & Structural Health Index...');
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 150));
 
       setAnalysisResult(data);
       if (data.defects && data.defects.length > 0) {
@@ -224,12 +265,16 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
   const handleSaveInspection = () => {
     if (!analysisResult || !imagePreview) return;
 
+    const effectiveBuildingId = currentBuilding?.id || 'bld_registered_default';
+    const effectiveBuildingName = currentBuilding?.name || customBuildingName || 'Registered Building Asset';
+    const effectiveBuildingCode = currentBuilding?.code || customBuildingCode || 'ASSET-01';
+
     const newInspection: Inspection = {
       id: `insp_${Date.now()}`,
-      inspectionCode: `INSP-${new Date().getFullYear()}-${currentBuilding.code}-${Math.floor(100 + Math.random() * 900)}`,
-      buildingId: currentBuilding.id,
-      buildingName: currentBuilding.name,
-      buildingCode: currentBuilding.code,
+      inspectionCode: `INSP-${new Date().getFullYear()}-${effectiveBuildingCode}-${Math.floor(100 + Math.random() * 900)}`,
+      buildingId: effectiveBuildingId,
+      buildingName: effectiveBuildingName,
+      buildingCode: effectiveBuildingCode,
       element: selectedElement,
       locationDetails: locationDetails,
       inspectorName: inspectorName || user?.fullName || 'Er. Arjun Sharma',
@@ -308,7 +353,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
               type="button"
               disabled={isPingingWorkflow}
               onClick={pingRoboflowWorkflow}
-              className="px-3 py-1.5 rounded-lg bg-blue-600/80 hover:bg-blue-600 text-white text-xs font-semibold flex items-center gap-1.5 border border-blue-400/30 transition-colors disabled:opacity-50"
+              className="px-3 py-1.5 rounded-lg bg-blue-600/80 hover:bg-blue-600 text-white text-xs font-semibold flex items-center gap-1.5 border border-blue-400/30 transition-colors disabled:opacity-50 cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isPingingWorkflow ? 'animate-spin' : ''}`} />
               <span>{isPingingWorkflow ? 'Testing...' : 'Test Connection'}</span>
@@ -317,7 +362,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
             <button
               type="button"
               onClick={() => setShowWorkflowDetails(!showWorkflowDetails)}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1 border border-slate-700 transition-colors"
+              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1 border border-slate-700 transition-colors cursor-pointer"
             >
               <span>Info</span>
               {showWorkflowDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -374,22 +419,56 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
             </h3>
 
             {/* Building Selection */}
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Target Building / Infrastructure Asset
-              </label>
-              <select
-                value={selectedBuildingId}
-                onChange={(e) => setSelectedBuildingId(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 bg-white font-medium text-slate-900"
-              >
-                {buildings.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.code} &bull; {b.name} ({b.city})
-                  </option>
-                ))}
-              </select>
-            </div>
+            {buildings.length > 0 ? (
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Target Building / Infrastructure Asset
+                </label>
+                <select
+                  value={selectedBuildingId}
+                  onChange={(e) => setSelectedBuildingId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 bg-white font-medium text-slate-900"
+                >
+                  {buildings.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.code} &bull; {b.name} ({b.city})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block font-semibold text-slate-700">
+                    Target Building Code & Name
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('buildings')}
+                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5" />
+                    <span>Register in Directory</span>
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <input
+                    type="text"
+                    value={customBuildingCode}
+                    onChange={(e) => setCustomBuildingCode(e.target.value)}
+                    placeholder="Code (e.g. B-101)"
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 font-mono text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                  <input
+                    type="text"
+                    value={customBuildingName}
+                    onChange={(e) => setCustomBuildingName(e.target.value)}
+                    placeholder="Facility Name"
+                    className="col-span-2 px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Element Name */}
             <div>
@@ -469,7 +548,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setInputMode('upload')}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
                     inputMode === 'upload' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -478,7 +557,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setInputMode('url')}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
                     inputMode === 'url' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -549,7 +628,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                 <button
                   type="button"
                   onClick={() => cameraInputRef.current?.click()}
-                  className="w-full py-2 px-3 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center justify-center gap-2 transition-colors"
+                  className="w-full py-2 px-3 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
                 >
                   <Camera className="w-4 h-4 text-slate-600" />
                   <span>Take Live Photo with Camera</span>
@@ -567,14 +646,14 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                       type="url"
                       value={imageUrlInput}
                       onChange={(e) => setImageUrlInput(e.target.value)}
-                      placeholder="https://example.com/concrete_crack.jpg"
+                      placeholder="https://images.unsplash.com/photo-1590381105924-c72589b9ef3f"
                       className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
                     />
                   </div>
                   <button
                     type="button"
                     onClick={handleApplyUrl}
-                    className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs"
+                    className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs cursor-pointer"
                   >
                     Load
                   </button>
@@ -597,7 +676,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                   <button
                     type="button"
                     onClick={handleClearImage}
-                    className="absolute top-2 right-2 p-1.5 rounded-full bg-slate-900/80 hover:bg-red-600 text-white transition-colors"
+                    className="absolute top-2 right-2 p-1.5 rounded-full bg-slate-900/80 hover:bg-red-600 text-white transition-colors cursor-pointer"
                     title="Remove Photo"
                   >
                     <X className="w-4 h-4" />
@@ -607,7 +686,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-1.5 px-3 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                  className="w-full py-1.5 px-3 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <UploadCloud className="w-3.5 h-3.5" />
                   <span>Choose Different Photo</span>
@@ -621,7 +700,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                 <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <span className="font-bold block text-red-900">Analysis Error</span>
-                  <p className="text-[11px] text-red-700 mt-0.5">{analysisError}</p>
+                  <p className="text-[11px] text-red-700 mt-0.5 leading-relaxed">{analysisError}</p>
                 </div>
               </div>
             )}
@@ -632,7 +711,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                 type="button"
                 disabled={!imagePreview || isAnalyzing}
                 onClick={runAiAnalysis}
-                className="w-full py-3.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-900/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full py-3.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-900/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {isAnalyzing ? (
                   <>
@@ -783,7 +862,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowRawJson(!showRawJson)}
-                    className="text-[11px] text-blue-700 hover:text-blue-900 font-semibold flex items-center gap-1"
+                    className="text-[11px] text-blue-700 hover:text-blue-900 font-semibold flex items-center gap-1 cursor-pointer"
                   >
                     <Code className="w-3.5 h-3.5" />
                     <span>{showRawJson ? 'Hide' : 'View'} Roboflow Raw Output & JSON Telemetry</span>
@@ -866,25 +945,14 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                         <span>View Certificate & AI Report</span>
                       </button>
 
-                      {currentBuilding?.code === 'B-203' ? (
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab('b-203')}
-                          className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <Activity className="w-4 h-4" />
-                          <span>View B-203 Deep Dive</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab('buildings')}
-                          className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                        >
-                          <span>Building Assets</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('buildings')}
+                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <span>Building Assets</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
                     </>
                   )}
                 </div>

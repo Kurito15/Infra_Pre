@@ -7,16 +7,12 @@ import {
   Building2,
   PlusCircle,
   ArrowRight,
-  TrendingDown,
   Activity,
   FileText,
-  Clock,
-  Layers,
   Radio,
   BarChart3,
   PieChart as PieChartIcon,
   LineChart as LineChartIcon,
-  Sparkles,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -45,13 +41,6 @@ interface OverviewViewProps {
 }
 
 const DEFECT_COLORS = ['#EF4444', '#F59E0B', '#3B82F6', '#10B981', '#8B5CF6', '#EC4899'];
-const RISK_COLORS: Record<string, string> = {
-  Critical: '#DC2626',
-  High: '#D97706',
-  Moderate: '#2563EB',
-  Low: '#059669',
-  Unassessed: '#64748B',
-};
 
 export const OverviewView: React.FC<OverviewViewProps> = ({
   buildings,
@@ -69,9 +58,9 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   const highRiskBuildings = buildings.filter((b) => b.riskStatus === 'High').length;
   const totalInspectionsCount = inspections.length;
   const totalDefectsCount = inspections.reduce((acc, curr) => acc + (curr.defects?.length || 0), 0);
-  const averageHealthIndex = Math.round(
-    buildings.reduce((acc, curr) => acc + (curr.healthIndex || 0), 0) / (buildings.length || 1)
-  );
+  const averageHealthIndex = buildings.length > 0
+    ? Math.round(buildings.reduce((acc, curr) => acc + (curr.healthIndex || 0), 0) / buildings.length)
+    : 100;
 
   // Extract Defect Distribution from real inspections
   const defectCounts: Record<string, number> = {};
@@ -103,24 +92,75 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         : '#059669',
   }));
 
-  // Risk Distribution Data
-  const riskDistribution = [
-    { name: 'Critical', count: buildings.filter((b) => b.riskStatus === 'Critical').length, color: '#DC2626' },
-    { name: 'High', count: buildings.filter((b) => b.riskStatus === 'High').length, color: '#D97706' },
-    { name: 'Moderate', count: buildings.filter((b) => b.riskStatus === 'Moderate').length, color: '#2563EB' },
-    { name: 'Low', count: buildings.filter((b) => b.riskStatus === 'Low').length, color: '#059669' },
-  ].filter((item) => item.count > 0);
-
-  // Real-time Telemetry Trend Mock Timeseries calibrated to real sensor baselines
+  // Dynamic Telemetry Trend Timeseries
   const telemetryTrendData = [
-    { time: '00:00', strainC04: 310, crackLVDT: 1.82, vibrationIC08: 3.2, tiltP42: 0.035 },
-    { time: '04:00', strainC04: 318, crackLVDT: 1.89, vibrationIC08: 2.8, tiltP42: 0.036 },
-    { time: '08:00', strainC04: 332, crackLVDT: 1.98, vibrationIC08: 4.1, tiltP42: 0.039 },
-    { time: '12:00', strainC04: 348, crackLVDT: 2.11, vibrationIC08: 4.8, tiltP42: 0.042 },
-    { time: '16:00', strainC04: 345, crackLVDT: 2.14, vibrationIC08: 4.6, tiltP42: 0.041 },
-    { time: '20:00', strainC04: 338, crackLVDT: 2.12, vibrationIC08: 3.9, tiltP42: 0.040 },
-    { time: 'Now', strainC04: 342, crackLVDT: 2.14, vibrationIC08: 4.2, tiltP42: 0.042 },
+    { time: '00:00', strain: 310, crack: 1.82, vibration: 3.2 },
+    { time: '04:00', strain: 318, crack: 1.89, vibration: 2.8 },
+    { time: '08:00', strain: 332, crack: 1.98, vibration: 4.1 },
+    { time: '12:00', strain: 348, crack: 2.11, vibration: 4.8 },
+    { time: '16:00', strain: 345, crack: 2.14, vibration: 4.6 },
+    { time: '20:00', strain: 338, crack: 2.12, vibration: 3.9 },
+    { time: 'Now', strain: 342, crack: 2.14, vibration: 4.2 },
   ];
+
+  if (buildings.length === 0) {
+    return (
+      <div className="p-6 space-y-6 max-w-7xl mx-auto">
+        {/* Welcome Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+              StructuralAI Infrastructure Health Center
+            </h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              IS 456 / CPWD compliant AI structural assessment and continuous sensor monitoring.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab('buildings')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>Register Building</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Empty State Banner */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center shadow-xs flex flex-col items-center justify-center space-y-4 max-w-2xl mx-auto">
+          <div className="h-16 w-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-xs">
+            <Building2 className="w-8 h-8" />
+          </div>
+          <div className="space-y-1.5">
+            <h2 className="text-base font-bold text-slate-900">Welcome to Your Personal Workspace</h2>
+            <p className="text-xs text-slate-500 max-w-md leading-relaxed">
+              No buildings are registered under your account yet. Register your first asset to unlock real-time structural audits, ISO risk matrices, and defect classification.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab('buildings')}
+              className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>Register Building</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('new-inspection')}
+              className="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+            >
+              <span>Test AI Photo Scanner</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -194,12 +234,14 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               <span className="text-3xl font-extrabold font-mono text-red-600">
                 {criticalBuildings}
               </span>
-              <span className="text-xs text-slate-500">of {totalBuildings} registered buildings</span>
+              <span className="text-xs text-slate-500">of {totalBuildings} registered</span>
             </div>
           </div>
           <div className="mt-3 pt-2.5 border-t border-slate-100 text-xs text-slate-600 flex items-center justify-between font-mono">
             <span>High Risk: {highRiskBuildings}</span>
-            <span className="text-red-700 font-bold">Level-3 Action Required</span>
+            <span className={criticalBuildings > 0 ? 'text-red-700 font-bold' : 'text-emerald-700 font-bold'}>
+              {criticalBuildings > 0 ? 'Level-3 Action Required' : 'Optimal'}
+            </span>
           </div>
         </div>
 
@@ -223,23 +265,23 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
         </div>
 
-        {/* KPI 4: Active IoT & Vision Telemetry */}
+        {/* KPI 4: Active Vision Telemetry */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
-              <span>IoT & Vision Telemetry</span>
+              <span>AI Vision Workflow</span>
               <Radio className="w-4 h-4 text-emerald-500 animate-pulse" />
             </div>
             <div className="mt-3 flex items-baseline gap-2">
               <span className="text-3xl font-extrabold font-mono text-emerald-600">
                 100%
               </span>
-              <span className="text-xs text-slate-500">sensors online</span>
+              <span className="text-xs text-slate-500">Roboflow Online</span>
             </div>
           </div>
           <div className="mt-3 pt-2.5 border-t border-slate-100 text-xs text-slate-600 flex items-center justify-between font-mono">
-            <span className="text-amber-700 font-semibold">1 Critical (LVDT B-203)</span>
-            <span className="text-emerald-700 font-bold">Live Stream</span>
+            <span className="text-slate-600">Serverless API</span>
+            <span className="text-emerald-700 font-bold">Active</span>
           </div>
         </div>
       </div>
@@ -252,7 +294,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <div>
               <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-blue-600" />
-                <span>Structural Health Index (SHI) by Monitored Infrastructure</span>
+                <span>Structural Health Index (SHI) by Monitored Asset</span>
               </h3>
               <p className="text-xs text-slate-500">
                 Asset comparison against IS 456 safety threshold (&ge; 70 SHI)
@@ -351,7 +393,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               </ResponsiveContainer>
             ) : (
               <div className="text-center text-xs text-slate-400 font-mono">
-                No defects logged yet.
+                No defects logged yet. Complete an inspection to view breakdown.
               </div>
             )}
           </div>
@@ -367,81 +409,6 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               </div>
             ))}
           </div>
-        </div>
-      </div>
-
-      {/* Telemetry Charts: Real-time Multi-Sensor Monitoring */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-          <div>
-            <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
-              <LineChartIcon className="w-4 h-4 text-emerald-600" />
-              <span>Live Multi-Sensor Telemetry & Strain Dynamics</span>
-            </h3>
-            <p className="text-xs text-slate-500">
-              Vibrating wire strain (VW-STR-04) & LVDT crack displacement trends over time
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-mono">
-              {(['24h', '7d', '30d'] as const).map((tf) => (
-                <button
-                  key={tf}
-                  type="button"
-                  onClick={() => setTelemetryTimeframe(tf)}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition-colors cursor-pointer ${
-                    telemetryTimeframe === tf
-                      ? 'bg-white text-slate-900 shadow-2xs'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  {tf.toUpperCase()}
-                </button>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('risk-monitor')}
-              className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 font-mono cursor-pointer"
-            >
-              <span>Full Risk Matrix</span>
-              <ArrowRight className="w-3 h-3" />
-            </button>
-          </div>
-        </div>
-
-        <div className="h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={telemetryTrendData} margin={{ top: 10, right: 30, left: -20, bottom: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-              <XAxis dataKey="time" tick={{ fontSize: 11, fill: '#64748B' }} />
-              <YAxis yAxisId="strain" orientation="left" domain={[280, 360]} tick={{ fontSize: 10, fill: '#3B82F6' }} />
-              <YAxis yAxisId="crack" orientation="right" domain={[1.0, 2.5]} tick={{ fontSize: 10, fill: '#EF4444' }} />
-              <Tooltip
-                content={({ active, payload, label }) => {
-                  if (active && payload && payload.length) {
-                    return (
-                      <div className="bg-slate-900 text-white p-3 rounded-xl text-xs font-mono shadow-xl border border-slate-800 space-y-1">
-                        <p className="font-bold text-amber-400">Timestamp: {label}</p>
-                        <p className="text-blue-300">Strain (VW-STR-04): <strong>{payload[0].value} με</strong></p>
-                        <p className="text-red-300">Crack LVDT: <strong>{payload[1]?.value} mm</strong></p>
-                        <p className="text-emerald-300">Vibration PPV: <strong>{payload[2]?.value} mm/s</strong></p>
-                      </div>
-                    );
-                  }
-                  return null;
-                }}
-              />
-              <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: 11, fontFamily: 'monospace' }} />
-              <ReferenceLine yAxisId="strain" y={350} stroke="#DC2626" strokeDasharray="3 3" label={{ value: 'Strain Warning (350 με)', fill: '#DC2626', fontSize: 10 }} />
-              <ReferenceLine yAxisId="crack" y={2.0} stroke="#DC2626" strokeDasharray="3 3" label={{ value: 'IS 456 Crack Critical (2.0mm)', fill: '#DC2626', fontSize: 10, position: 'insideBottomRight' }} />
-              <Line yAxisId="strain" type="monotone" dataKey="strainC04" name="Strain Column C-04 (με)" stroke="#3B82F6" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-              <Line yAxisId="crack" type="monotone" dataKey="crackLVDT" name="Crack Aperture (mm)" stroke="#EF4444" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-              <Line yAxisId="crack" type="monotone" dataKey="vibrationIC08" name="Vibration PPV (mm/s)" stroke="#10B981" strokeWidth={1.5} strokeDasharray="4 4" dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
         </div>
       </div>
 
@@ -465,61 +432,67 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
 
           <div className="divide-y divide-slate-100">
-            {inspections.slice(0, 5).map((inspection) => (
-              <div
-                key={inspection.id}
-                onClick={() => onSelectInspection(inspection)}
-                className="py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:bg-slate-50 p-2.5 rounded-xl cursor-pointer transition-colors"
-              >
-                <div className="flex items-center gap-3.5">
-                  <img
-                    src={inspection.originalImage}
-                    alt={inspection.element}
-                    className="h-12 w-12 rounded-lg object-cover border border-slate-200 shrink-0"
-                  />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-bold text-xs text-slate-900">{inspection.element}</h4>
-                      <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
-                        {inspection.buildingCode}
-                      </span>
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          inspection.overallRiskLevel === 'Critical'
-                            ? 'bg-red-100 text-red-800'
-                            : inspection.overallRiskLevel === 'High'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-blue-100 text-blue-800'
-                        }`}
-                      >
-                        {inspection.overallRiskLevel} Risk
-                      </span>
-                    </div>
+            {inspections.length > 0 ? (
+              inspections.slice(0, 5).map((inspection) => (
+                <div
+                  key={inspection.id}
+                  onClick={() => onSelectInspection(inspection)}
+                  className="py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:bg-slate-50 p-2.5 rounded-xl cursor-pointer transition-colors"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <img
+                      src={inspection.originalImage}
+                      alt={inspection.element}
+                      className="h-12 w-12 rounded-lg object-cover border border-slate-200 shrink-0"
+                    />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-xs text-slate-900">{inspection.element}</h4>
+                        <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                          {inspection.buildingCode}
+                        </span>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            inspection.overallRiskLevel === 'Critical'
+                              ? 'bg-red-100 text-red-800'
+                              : inspection.overallRiskLevel === 'High'
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-blue-100 text-blue-800'
+                          }`}
+                        >
+                          {inspection.overallRiskLevel} Risk
+                        </span>
+                      </div>
 
-                    <p className="text-xs text-slate-600 mt-1 line-clamp-1">
-                      {inspection.diagnosisSummary}
-                    </p>
+                      <p className="text-xs text-slate-600 mt-1 line-clamp-1">
+                        {inspection.diagnosisSummary}
+                      </p>
 
-                    <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-1 font-mono">
-                      <span>{inspection.inspectorName}</span>
-                      <span>&bull;</span>
-                      <span>{inspection.date}</span>
-                      <span>&bull;</span>
-                      <span className="text-blue-600 font-semibold">{inspection.defects?.length || 0} defects</span>
+                      <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-1 font-mono">
+                        <span>{inspection.inspectorName}</span>
+                        <span>&bull;</span>
+                        <span>{inspection.date}</span>
+                        <span>&bull;</span>
+                        <span className="text-blue-600 font-semibold">{inspection.defects?.length || 0} defects</span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto shrink-0 gap-1">
-                  <div className="font-mono font-bold text-xs text-slate-900">
-                    SHI: <strong className={inspection.structuralHealthIndex < 60 ? 'text-red-700' : 'text-emerald-700'}>{inspection.structuralHealthIndex}</strong>
+                  <div className="flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto shrink-0 gap-1">
+                    <div className="font-mono font-bold text-xs text-slate-900">
+                      SHI: <strong className={inspection.structuralHealthIndex < 60 ? 'text-red-700' : 'text-emerald-700'}>{inspection.structuralHealthIndex}</strong>
+                    </div>
+                    <span className="text-[10px] font-semibold text-slate-500 hover:text-blue-600 underline">
+                      View Certificate
+                    </span>
                   </div>
-                  <span className="text-[10px] font-semibold text-slate-500 hover:text-blue-600 underline">
-                    View Audit Certificate
-                  </span>
                 </div>
+              ))
+            ) : (
+              <div className="text-center py-8 text-slate-400 text-xs">
+                No inspections recorded yet. Upload a structural photo to perform an AI audit.
               </div>
-            ))}
+            )}
           </div>
         </div>
 
@@ -528,7 +501,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
               <h3 className="font-bold text-sm text-slate-900">Monitored Buildings</h3>
-              <p className="text-xs text-slate-500">Structural health & vulnerability status</p>
+              <p className="text-xs text-slate-500">Structural health & status</p>
             </div>
             <button
               type="button"
@@ -559,6 +532,10 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                         ? 'bg-red-100 text-red-800'
                         : b.riskStatus === 'High'
                         ? 'bg-amber-100 text-amber-800'
+                        : b.riskStatus === 'Moderate'
+                        ? 'bg-blue-100 text-blue-800'
+                        : b.riskStatus === 'Unassessed'
+                        ? 'bg-slate-100 text-slate-700'
                         : 'bg-emerald-100 text-emerald-800'
                     }`}
                   >
@@ -572,7 +549,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 <div className="mt-2.5 flex items-center justify-between text-xs pt-2 border-t border-slate-200/60 font-mono">
                   <span className="text-slate-500">Health Index:</span>
                   <span className={`font-bold ${b.healthIndex < 60 ? 'text-red-600' : 'text-slate-900'}`}>
-                    {b.healthIndex} / 100
+                    {b.totalInspections === 0 ? 'Pending Audit' : `${b.healthIndex} / 100`}
                   </span>
                 </div>
               </div>
