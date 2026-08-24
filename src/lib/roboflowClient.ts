@@ -457,8 +457,8 @@ export function buildClientEngineeringAnalysis(
 }
 
 /**
- * Direct Frontend Roboflow Workflow Execution
- * Invokes https://serverless.roboflow.com directly from the browser.
+ * Frontend Roboflow Analysis via Server-Side Proxy
+ * Routes through /api/roboflow/proxy to avoid CORS and keep API key secure
  */
 export async function executeFrontendRoboflowAnalysis(
   imageSource: File | string,
@@ -473,54 +473,51 @@ export async function executeFrontendRoboflowAnalysis(
     if (imageSource.startsWith('https://') && !imageSource.includes('localhost')) {
       accessibleUrl = imageSource;
     } else if (imageSource.startsWith('data:')) {
-      base64Value = imageSource.split('base64,')[1]?.trim() || imageSource;
+      base64Value = imageSource;
     }
   }
 
   // If not yet an accessible HTTPS URL, upload to Supabase storage
-  if (!accessibleUrl) {
+  if (!accessibleUrl && !base64Value) {
     try {
       const uploadedUrl = await uploadImageToSupabaseStorage(imageSource, userId);
       if (uploadedUrl.startsWith('https://')) {
         accessibleUrl = uploadedUrl;
+      } else if (uploadedUrl.startsWith('data:')) {
+        base64Value = uploadedUrl;
       }
     } catch (e) {
       console.warn('Storage upload fallback:', e);
+      // Try to convert File to base64
+      if (imageSource instanceof File) {
+        base64Value = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(imageSource);
+        });
+      }
     }
   }
 
-  // Prepare workflow payload
-  let payload: any;
+  // Prepare payload for server-side proxy
+  const payload: any = {
+    element: elementName,
+  };
+
   if (accessibleUrl) {
-    payload = {
-      api_key: ROBOFLOW_API_KEY,
-      inputs: {
-        image: {
-          type: 'url',
-          value: accessibleUrl,
-        },
-      },
-    };
+    payload.imageUrl = accessibleUrl;
   } else if (base64Value) {
-    payload = {
-      api_key: ROBOFLOW_API_KEY,
-      inputs: {
-        image: {
-          type: 'base64',
-          value: base64Value,
-        },
-      },
-    };
+    payload.image = base64Value;
   } else {
-    throw new Error('Unable to construct a valid image payload for Roboflow.');
+    throw new Error('Unable to construct a valid image payload for analysis.');
   }
 
-  // Step 2: Direct browser fetch to Roboflow Serverless Workflow
-  const response = await fetch(ROBOFLOW_WORKFLOW_URL, {
+  // Call server-side proxy endpoint
+  const response = await fetch('/api/roboflow/proxy', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Accept: 'application/json',
     },
     body: JSON.stringify(payload),
   });
@@ -534,24 +531,27 @@ export async function executeFrontendRoboflowAnalysis(
       errorDetail = await response.text();
     }
     throw {
-      stage: 'roboflow',
+      stage: 'roboflow-proxy',
       status: response.status,
       statusText: response.statusText,
-      message: `Roboflow Workflow HTTP ${response.status}: ${errorDetail || response.statusText}`,
+      message: `Server Proxy HTTP ${response.status}: ${errorDetail || response.statusText}`,
       rawError: errorDetail,
     };
   }
 
   const responseData = await response.json();
-  const { predictions, imageWidth, imageHeight } = extractWorkflowPredictions(responseData);
+  
+  // Extract predictions from proxy response
+  const workflowOutput = responseData.responseBody || responseData;
+  const { predictions, imageWidth, imageHeight } = extractWorkflowPredictions(workflowOutput);
 
   return buildClientEngineeringAnalysis(
     predictions,
     imageWidth,
     imageHeight,
     elementName,
-    responseData,
-    accessibleUrl || (typeof imageSource === 'string' ? imageSource : undefined)
+    workflowOutput,
+    accessibleUrl
   );
 }
 
