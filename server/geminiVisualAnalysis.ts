@@ -22,45 +22,58 @@ function getAiClient(): GoogleGenAI | null {
 }
 
 export async function executeGeminiVisualAnalysis(
-  imageData: string,
+  imagesInput: string | string[],
   elementName: string = 'Primary Structural Member',
   roboflowError?: string
 ): Promise<AnalysisResponse> {
   const ai = getAiClient();
+  const rawImages = Array.isArray(imagesInput) ? imagesInput : [imagesInput];
+  const inlineParts: Array<{ inlineData: { mimeType: string; data: string } }> = [];
 
-  // Prepare base64 image and mimeType
-  let cleanBase64 = imageData.trim();
-  let mimeType = 'image/jpeg';
+  for (const imgSource of rawImages) {
+    if (!imgSource) continue;
+    let cleanBase64 = imgSource.trim();
+    let mimeType = 'image/jpeg';
 
-  if (cleanBase64.startsWith('data:')) {
-    const mimeMatch = cleanBase64.match(/data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,/);
-    if (mimeMatch && mimeMatch[1]) {
-      mimeType = mimeMatch[1];
-    }
-    cleanBase64 = cleanBase64.split('base64,')[1]?.trim() || cleanBase64;
-  } else if (cleanBase64.startsWith('http://') || cleanBase64.startsWith('https://')) {
-    try {
-      const res = await fetch(cleanBase64);
-      if (res.ok) {
-        const contentType = res.headers.get('content-type');
-        if (contentType) mimeType = contentType.split(';')[0];
-        const arrayBuf = await res.arrayBuffer();
-        cleanBase64 = Buffer.from(arrayBuf).toString('base64');
+    if (cleanBase64.startsWith('data:')) {
+      const mimeMatch = cleanBase64.match(/data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,/);
+      if (mimeMatch && mimeMatch[1]) {
+        mimeType = mimeMatch[1];
       }
-    } catch (fetchErr) {
-      console.warn('Gemini visual analysis image fetch error:', fetchErr);
+      cleanBase64 = cleanBase64.split('base64,')[1]?.trim() || cleanBase64;
+    } else if (cleanBase64.startsWith('http://') || cleanBase64.startsWith('https://')) {
+      try {
+        const res = await fetch(cleanBase64);
+        if (res.ok) {
+          const contentType = res.headers.get('content-type');
+          if (contentType) mimeType = contentType.split(';')[0];
+          const arrayBuf = await res.arrayBuffer();
+          cleanBase64 = Buffer.from(arrayBuf).toString('base64');
+        }
+      } catch (fetchErr) {
+        console.warn('Gemini visual analysis image fetch error:', fetchErr);
+      }
+    }
+
+    if (cleanBase64 && cleanBase64.length > 50) {
+      inlineParts.push({
+        inlineData: {
+          mimeType,
+          data: cleanBase64,
+        },
+      });
     }
   }
 
-  if (ai && cleanBase64 && cleanBase64.length > 50) {
+  if (ai && inlineParts.length > 0) {
     try {
-      const prompt = `You are an expert Senior Forensic Structural Engineer performing a visual condition assessment on photographic evidence of an Indian infrastructure asset (${elementName}).
+      const prompt = `You are an expert Senior Forensic Structural Engineer performing a comprehensive visual condition assessment on photographic evidence (${inlineParts.length} image(s) provided) of an Indian infrastructure asset (${elementName}).
 
 IMPORTANT CONTEXT:
-The primary Roboflow computer vision workflow was temporarily unavailable (${roboflowError ? `Status: ${roboflowError.substring(0, 100)}` : 'Gateway timeout'}). You are executing the secondary Gemini Visual Assessment path.
+The primary Roboflow computer vision workflow was temporarily unavailable (${roboflowError ? `Status: ${roboflowError.substring(0, 100)}` : 'Gateway timeout'}). You are executing the secondary Gemini Visual Assessment path based on all provided photographic evidence.
 
 SAFETY & ENGINEERING GUIDELINES:
-1. Visually assess ONLY what can reasonably be observed from this photograph.
+1. Visually assess ONLY what can reasonably be observed from these photographs.
 2. Identify possible structural defects, such as:
    - structural_crack (diagonal/shear or heavy flexural cracks)
    - surface_crack (micro-hairline or plastic shrinkage)
@@ -69,8 +82,8 @@ SAFETY & ENGINEERING GUIDELINES:
    - water_damage (efflorescence, moisture leaching, damp patch)
    - honeycombing (exposed aggregate voids due to improper compaction)
    - masonry_damage (cracked mortar joints, fractured brick/block)
-3. Do NOT fabricate exact hidden internal measurements. Provide realistic engineering estimates based strictly on visible context.
-4. If the photograph shows sound concrete with no apparent severe distress, set defects to an empty array and rate health index high (90-98).
+3. Do NOT fabricate exact hidden internal measurements. Provide realistic engineering estimates based strictly on visible context across all images.
+4. If the photographs show sound concrete with no apparent severe distress, set defects to an empty array and rate health index high (90-98).
 5. For bounding boxes, provide normalized coordinates in standard 0-1000 scale:
    - xMin (0-1000), yMin (0-1000), xMax (0-1000), yMax (0-1000)
 6. All findings must be labeled clearly for this fallback path.
@@ -81,7 +94,7 @@ Return a STRICT JSON response adhering to this schema:
   "structuralHealthIndex": number (0-100),
   "riskScore": number (0-100),
   "totalDefectCoveragePercent": number,
-  "diagnosisSummary": "Detailed forensic diagnosis paragraph explaining what is visually observed on the element.",
+  "diagnosisSummary": "Detailed forensic diagnosis paragraph explaining what is visually observed across all provided photographs of the element.",
   "safetyPrecautions": ["Precaution 1", "Precaution 2"],
   "defects": [
     {
@@ -104,19 +117,14 @@ Return a STRICT JSON response adhering to this schema:
       const response = await ai.models.generateContent({
         model: 'gemini-3.7-flash',
         contents: [
-          {
-            inlineData: {
-              mimeType,
-              data: cleanBase64,
-            },
-          },
+          ...inlineParts,
           {
             text: prompt,
           },
         ],
         config: {
           systemInstruction:
-            'You are an authoritative Senior Forensic Structural Engineer compliant with IS 456:2000. Always output valid JSON. Visually assess only visible evidence.',
+            'You are an authoritative Senior Forensic Structural Engineer compliant with IS 456:2000. Always output valid JSON. Visually assess only visible evidence across all provided images.',
           responseMimeType: 'application/json',
         },
       });

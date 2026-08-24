@@ -58,10 +58,12 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
   const [inspectorBadge, setInspectorBadge] = useState<string>(user?.badgeNumber || 'CPWD-AUD-8821');
   const [inspectorNotes, setInspectorNotes] = useState<string>('Visual inspection of reinforced concrete member. Examining crack morphology and potential spalling.');
 
-  // Image Upload Modes: 'upload' | 'url'
+  // Multiple Image Upload State
   const [inputMode, setInputMode] = useState<'upload' | 'url'>('upload');
   const [imageUrlInput, setImageUrlInput] = useState<string>('');
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
+  const imagePreview = imagePreviews[activeImageIndex] || null;
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -76,7 +78,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
   }>({
     tested: false,
     success: true,
-    message: 'Server-Side Proxy Active',
+    message: 'Direct Client-Side Roboflow Workflow Ready',
   });
   const [showWorkflowDetails, setShowWorkflowDetails] = useState<boolean>(false);
   const [showRawJson, setShowRawJson] = useState<boolean>(false);
@@ -116,7 +118,6 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
     setIsPingingWorkflow(true);
     const startTime = Date.now();
     try {
-      // Call server-side test endpoint
       const res = await fetch('/api/roboflow/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -150,81 +151,84 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
     }
   };
 
-  // Optimized Image file handler (downsamples large photos to avoid payload timeouts)
-  const handleFileUpload = (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      setAnalysisError({ message: 'Please select a valid image file (JPG, PNG, WEBP).' });
-      return;
-    }
-
+  // Optimized Image files handler for multiple images
+  const handleFileUploads = (files: FileList | File[]) => {
     setAnalysisError(null);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const rawDataUrl = e.target?.result as string;
-      if (!rawDataUrl) return;
+    Array.from(files).forEach((file) => {
+      if (!file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const rawDataUrl = e.target?.result as string;
+        if (!rawDataUrl) return;
 
-      const img = new Image();
-      img.onload = () => {
-        const maxDim = 1600;
-        let width = img.width;
-        let height = img.height;
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 1600;
+          let width = img.width;
+          let height = img.height;
 
-        if (width > maxDim || height > maxDim) {
-          if (width > height) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          } else {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
           }
-        }
 
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const optimizedDataUrl = canvas.toDataURL('image/jpeg', 0.90);
-          setImagePreview(optimizedDataUrl);
-        } else {
-          setImagePreview(rawDataUrl);
-        }
-        setAnalysisResult(null);
-        setIsSaved(false);
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const optimized = canvas.toDataURL('image/jpeg', 0.90);
+            setImagePreviews((prev) => [...prev, optimized]);
+          } else {
+            setImagePreviews((prev) => [...prev, rawDataUrl]);
+          }
+          setAnalysisResult(null);
+          setIsSaved(false);
+        };
+        img.onerror = () => {
+          setImagePreviews((prev) => [...prev, rawDataUrl]);
+          setAnalysisResult(null);
+          setIsSaved(false);
+        };
+        img.src = rawDataUrl;
       };
-      img.onerror = () => {
-        setImagePreview(rawDataUrl);
-        setAnalysisResult(null);
-        setIsSaved(false);
-      };
-      img.src = rawDataUrl;
-    };
-    reader.readAsDataURL(file);
+      reader.readAsDataURL(file);
+    });
   };
 
   // URL loader
   const handleApplyUrl = () => {
     if (!imageUrlInput.trim()) return;
     setAnalysisError(null);
-    setImagePreview(imageUrlInput.trim());
-    setAnalysisResult(null);
-    setIsSaved(false);
-  };
-
-  // Clear uploaded image
-  const handleClearImage = () => {
-    setImagePreview(null);
+    setImagePreviews((prev) => [...prev, imageUrlInput.trim()]);
     setImageUrlInput('');
     setAnalysisResult(null);
-    setAnalysisError(null);
     setIsSaved(false);
   };
 
-  // Execute server-side Roboflow analysis via proxy
+  // Remove single image
+  const handleRemoveImage = (index: number) => {
+    setImagePreviews((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      if (activeImageIndex >= next.length) {
+        setActiveImageIndex(Math.max(0, next.length - 1));
+      }
+      return next;
+    });
+    setAnalysisResult(null);
+    setIsSaved(false);
+  };
+
+  // Execute Roboflow analysis for all multiple images individually and synthesize combined report
   const runAiAnalysis = async (forceFallback = false) => {
-    if (!imagePreview) {
-      setAnalysisError({ message: 'Please upload or capture a real structural photograph first.' });
+    if (imagePreviews.length === 0) {
+      setAnalysisError({ message: 'Please upload or capture at least one structural photograph first.' });
       return;
     }
 
@@ -235,12 +239,22 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
 
     try {
       if (forceFallback) {
-        setScanStep('1/3: Activating Gemini Visual Assessment fallback pipeline...');
-        const fallbackResult = await executeFallbackGeminiVisualAnalysis(
-          imagePreview,
-          selectedElement,
-          'Direct user activation or Roboflow workflow unavailable'
-        );
+        setScanStep(`1/3: Activating multi-image Gemini Visual Assessment fallback across ${imagePreviews.length} inserted image(s)...`);
+        const res = await fetch('/api/gemini-fallback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            images: imagePreviews,
+            element: selectedElement,
+            roboflowError: 'Direct user activation or fallback requested',
+          }),
+        });
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(`Gemini fallback failed: ${errText}`);
+        }
+        const fallbackResult = await res.json();
+
         setScanStep('2/3: Computing IS 456 compliant indices and defect morphology...');
         await new Promise((r) => setTimeout(r, 100));
         setScanStep('3/3: Condition report synthesized.');
@@ -251,35 +265,123 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
         return;
       }
 
-      setScanStep('1/4: Preparing image payload and uploading to secure storage...');
+      setScanStep(`1/4: Preparing payload for ${imagePreviews.length} inserted image(s)...`);
       await new Promise((r) => setTimeout(r, 100));
 
-      setScanStep('2/4: Calling Roboflow Workflow via server-side proxy (/api/roboflow/proxy)...');
+      setScanStep(`2/4: Running Roboflow workflow individually across all ${imagePreviews.length} photograph(s)...`);
 
-      const result = await executeFrontendRoboflowAnalysis(
-        imagePreview,
-        selectedElement,
-        user?.id || 'default_user'
-      );
+      const allDefects: any[] = [];
+      let totalCoverage = 0;
+      let minHealthIndex = 100;
+      let maxRiskScore = 0;
+      const summaries: string[] = [];
+      const precautionsSet = new Set<string>();
+      let primaryResult: any = null;
+
+      for (let i = 0; i < imagePreviews.length; i++) {
+        const imgUrl = imagePreviews[i];
+        try {
+          const result = await executeFrontendRoboflowAnalysis(
+            imgUrl,
+            selectedElement,
+            user?.id || 'default_user'
+          );
+          if (!primaryResult) primaryResult = result;
+
+          if (result.structuralHealthIndex < minHealthIndex) {
+            minHealthIndex = result.structuralHealthIndex;
+          }
+          if (result.riskScore > maxRiskScore) {
+            maxRiskScore = result.riskScore;
+          }
+          totalCoverage += result.totalDefectCoveragePercent || 0;
+          if (result.diagnosisSummary) {
+            summaries.push(`[Photo ${i + 1}]: ${result.diagnosisSummary}`);
+          }
+          if (result.safetyPrecautions) {
+            result.safetyPrecautions.forEach((p) => precautionsSet.add(p));
+          }
+          if (result.defects) {
+            const tagged = result.defects.map((d: any) => ({
+              ...d,
+              id: `${d.id}_img_${i + 1}`,
+              technicalDescription: `(Photo ${i + 1}): ${d.technicalDescription}`,
+            }));
+            allDefects.push(...tagged);
+          }
+        } catch (singleErr) {
+          console.warn(`Roboflow analysis failed for image ${i + 1}:`, singleErr);
+        }
+      }
 
       setScanStep('3/4: Parsing defect segmentation masks & bounding coordinates...');
       await new Promise((r) => setTimeout(r, 100));
 
-      setScanStep('4/4: Calculating IS 456 crack aperture & Structural Health Index...');
+      setScanStep('4/4: Combining multi-image findings & calculating IS 456 Structural Health Index...');
       await new Promise((r) => setTimeout(r, 100));
 
-      setAnalysisResult(result);
-      if (result.defects && result.defects.length > 0) {
-        setSelectedDefectId(result.defects[0].id);
+      if (!primaryResult || allDefects.length === 0) {
+        throw new Error('Roboflow returned zero defects across images. Triggering multi-image Gemini fallback.');
+      }
+
+      const combinedCoverage = Number(Math.min(100, totalCoverage).toFixed(2));
+      const combinedRiskScore = Math.min(100, Math.max(maxRiskScore, Math.round(combinedCoverage * 2.5)));
+      const combinedHealthIndex = Math.max(10, Math.min(98, 100 - combinedRiskScore));
+
+      let overallRiskLevel: 'Critical' | 'High' | 'Moderate' | 'Low' = 'Low';
+      if (combinedHealthIndex < 50 || combinedRiskScore >= 70) overallRiskLevel = 'Critical';
+      else if (combinedHealthIndex < 70 || combinedRiskScore >= 45) overallRiskLevel = 'High';
+      else if (combinedHealthIndex < 85 || combinedRiskScore >= 20) overallRiskLevel = 'Moderate';
+
+      const combinedSummary = `Comprehensive multi-image forensic assessment across ${imagePreviews.length} photograph(s) of ${selectedElement}. Total defects localized: ${allDefects.length}. ${summaries.join(' ')}`;
+
+      const combinedResult = {
+        ...primaryResult,
+        structuralHealthIndex: combinedHealthIndex,
+        riskScore: combinedRiskScore,
+        overallRiskLevel,
+        totalDefectCoveragePercent: combinedCoverage,
+        diagnosisSummary: combinedSummary,
+        safetyPrecautions: Array.from(precautionsSet),
+        defects: allDefects,
+        imageUrl: imagePreviews[activeImageIndex] || imagePreviews[0],
+      };
+
+      setAnalysisResult(combinedResult);
+      if (combinedResult.defects && combinedResult.defects.length > 0) {
+        setSelectedDefectId(combinedResult.defects[0].id);
       }
     } catch (err: any) {
-      console.error('Analysis failed:', err);
+      console.error('Roboflow client analysis failed, falling back to Gemini with all inserted images:', err);
+      try {
+        setScanStep(`Roboflow failed. Executing multi-image Gemini Visual Assessment across ${imagePreviews.length} photo(s)...`);
+        const res = await fetch('/api/gemini-fallback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            images: imagePreviews,
+            element: selectedElement,
+            roboflowError: err?.message || 'Roboflow workflow network/CORS error',
+          }),
+        });
+        if (res.ok) {
+          const fallbackResult = await res.json();
+          setAnalysisResult(fallbackResult);
+          if (fallbackResult.defects && fallbackResult.defects.length > 0) {
+            setSelectedDefectId(fallbackResult.defects[0].id);
+          }
+          setAnalysisError(null);
+          return;
+        }
+      } catch (geminiErr) {
+        console.warn('Gemini multi-image fallback error:', geminiErr);
+      }
+
       const detailedMessage =
-        err?.message ||
-        (err?.status ? `Server proxy returned HTTP ${err.status}` : 'Unable to connect to analysis service.');
+        err?.message || 'Unable to connect to Roboflow workflow endpoint from browser.';
       setAnalysisError({
         message: detailedMessage,
-        details: err?.rawError || err?.statusText || 'The server-side proxy encountered an issue. Please try again.',
+        details: 'Check browser console or CORS permissions for serverless.roboflow.com.',
         isRoboflowUnavailable: true,
       });
       setAnalysisResult(null);
@@ -599,10 +701,11 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
               ref={fileInputRef}
               type="file"
               accept="image/*"
+              multiple
               className="hidden"
               onChange={(e) => {
-                if (e.target.files && e.target.files[0]) {
-                  handleFileUpload(e.target.files[0]);
+                if (e.target.files && e.target.files.length > 0) {
+                  handleFileUploads(e.target.files);
                 }
               }}
             />
@@ -611,16 +714,17 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
               type="file"
               accept="image/*"
               capture="environment"
+              multiple
               className="hidden"
               onChange={(e) => {
-                if (e.target.files && e.target.files[0]) {
-                  handleFileUpload(e.target.files[0]);
+                if (e.target.files && e.target.files.length > 0) {
+                  handleFileUploads(e.target.files);
                 }
               }}
             />
 
-            {/* Upload Box */}
-            {inputMode === 'upload' && !imagePreview && (
+            {/* Upload Box (shows even when images exist so users can add more) */}
+            {inputMode === 'upload' && (
               <div className="space-y-2">
                 <div
                   onDragOver={(e) => {
@@ -631,25 +735,25 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                   onDrop={(e) => {
                     e.preventDefault();
                     setIsDragOver(false);
-                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                      handleFileUpload(e.dataTransfer.files[0]);
+                    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                      handleFileUploads(e.dataTransfer.files);
                     }
                   }}
                   onClick={() => fileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-150 ${
+                  className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-150 ${
                     isDragOver
                       ? 'border-blue-600 bg-blue-50/70'
                       : 'border-slate-300 hover:border-blue-400 bg-slate-50/50 hover:bg-blue-50/30'
                   }`}
                 >
-                  <div className="h-11 w-11 mx-auto rounded-full bg-blue-100 text-blue-700 flex items-center justify-center mb-2">
-                    <UploadCloud className="w-6 h-6" />
+                  <div className="h-10 w-10 mx-auto rounded-full bg-blue-100 text-blue-700 flex items-center justify-center mb-2">
+                    <UploadCloud className="w-5 h-5" />
                   </div>
                   <div className="text-xs font-bold text-slate-800">
-                    Upload High-Resolution Damage Photo
+                    {imagePreviews.length === 0 ? 'Upload Damage Photos (Multiple Supported)' : 'Add More Photographs'}
                   </div>
                   <p className="text-[11px] text-slate-500 mt-1">
-                    Click to browse from device or drag & drop (JPG, PNG, WEBP)
+                    Click to browse from device or drag & drop multiple files (JPG, PNG, WEBP)
                   </p>
                 </div>
 
@@ -665,7 +769,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
             )}
 
             {/* URL Input */}
-            {inputMode === 'url' && !imagePreview && (
+            {inputMode === 'url' && (
               <div className="space-y-2">
                 <div className="flex gap-2">
                   <div className="relative flex-1">
@@ -683,42 +787,67 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                     onClick={handleApplyUrl}
                     className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs cursor-pointer"
                   >
-                    Load
+                    Add URL
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Provide a direct public image URL to inspect.
+                  Provide a direct public image URL to add to the inspection set.
                 </p>
               </div>
             )}
 
-            {/* Image Preview & Change controls */}
-            {imagePreview && (
-              <div className="space-y-2">
+            {/* Image Previews & Thumbnails Gallery */}
+            {imagePreviews.length > 0 && (
+              <div className="space-y-3 pt-2">
                 <div className="relative rounded-xl overflow-hidden border border-slate-300 bg-slate-900 group">
                   <img
-                    src={imagePreview}
-                    alt="Structural Element Preview"
+                    src={imagePreviews[activeImageIndex] || imagePreviews[0]}
+                    alt="Active Structural Element Preview"
                     className="w-full max-h-56 object-contain mx-auto"
                   />
+                  <div className="absolute top-2 left-2 bg-slate-900/80 text-white text-[10px] font-mono px-2 py-0.5 rounded">
+                    Image {activeImageIndex + 1} of {imagePreviews.length} (Active View)
+                  </div>
                   <button
                     type="button"
-                    onClick={handleClearImage}
+                    onClick={() => handleRemoveImage(activeImageIndex)}
                     className="absolute top-2 right-2 p-1.5 rounded-full bg-slate-900/80 hover:bg-red-600 text-white transition-colors cursor-pointer"
-                    title="Remove Photo"
+                    title="Remove Active Photo"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-1.5 px-3 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <UploadCloud className="w-3.5 h-3.5" />
-                  <span>Choose Different Photo</span>
-                </button>
+                {/* Thumbnails grid */}
+                <div className="space-y-1.5">
+                  <div className="text-[11px] font-semibold text-slate-600">
+                    Inserted Photographs ({imagePreviews.length} attached for analysis & Gemini multi-image synthesis)
+                  </div>
+                  <div className="flex gap-2 overflow-x-auto pb-2">
+                    {imagePreviews.map((imgUrl, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => setActiveImageIndex(idx)}
+                        className={`relative w-16 h-16 rounded-lg overflow-hidden border-2 shrink-0 cursor-pointer transition-all ${
+                          idx === activeImageIndex ? 'border-blue-600 ring-2 ring-blue-600/30' : 'border-slate-200 opacity-75 hover:opacity-100'
+                        }`}
+                      >
+                        <img src={imgUrl} alt={`Thumb ${idx + 1}`} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveImage(idx);
+                          }}
+                          className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-red-600 text-white text-[8px]"
+                          title="Remove"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
 
