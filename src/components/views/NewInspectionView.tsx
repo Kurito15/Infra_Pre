@@ -3,6 +3,12 @@ import { Building, Inspection, Defect, ActiveTab } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { ImageAnnotator } from '../inspection/ImageAnnotator';
 import { DefectDetailCard } from '../inspection/DefectDetailCard';
+import {
+  executeFrontendRoboflowAnalysis,
+  executeFallbackGeminiVisualAnalysis,
+  ROBOFLOW_WORKFLOW_URL,
+  ROBOFLOW_API_KEY,
+} from '../../lib/roboflowClient';
 import confetti from 'canvas-confetti';
 import {
   UploadCloud,
@@ -25,6 +31,7 @@ import {
   X,
   PlusCircle,
   Building2,
+  Sparkles,
 } from 'lucide-react';
 
 interface NewInspectionViewProps {
@@ -70,7 +77,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
   }>({
     tested: false,
     success: true,
-    message: 'Roboflow Workflow Ready',
+    message: 'Direct Browser Workflow Online',
   });
   const [showWorkflowDetails, setShowWorkflowDetails] = useState<boolean>(false);
   const [showRawJson, setShowRawJson] = useState<boolean>(false);
@@ -78,7 +85,11 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
   // Analysis State
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [scanStep, setScanStep] = useState<string>('');
-  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisError, setAnalysisError] = useState<{
+    message: string;
+    details?: string;
+    isRoboflowUnavailable?: boolean;
+  } | null>(null);
   const [analysisResult, setAnalysisResult] = useState<{
     structuralHealthIndex: number;
     overallRiskLevel: 'Low' | 'Moderate' | 'High' | 'Critical';
@@ -89,7 +100,10 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
     defects: Defect[];
     provider?: string;
     workflowId?: string;
+    reportSource?: string;
+    isFallback?: boolean;
     rawWorkflowData?: any;
+    imageUrl?: string;
   } | null>(null);
 
   const [selectedDefectId, setSelectedDefectId] = useState<string | null>(null);
@@ -98,34 +112,47 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
 
   const currentBuilding = buildings.find((b) => b.id === selectedBuildingId) || buildings[0];
 
-  // Test Roboflow Workflow endpoint
+  // Test Roboflow Workflow endpoint directly from browser
   const pingRoboflowWorkflow = async () => {
     setIsPingingWorkflow(true);
+    const startTime = Date.now();
     try {
-      const res = await fetch('/api/roboflow/test', {
+      // Direct ping to Roboflow workflow URL
+      const res = await fetch(ROBOFLOW_WORKFLOW_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          api_key: ROBOFLOW_API_KEY,
+          inputs: {
+            image: {
+              type: 'url',
+              value: 'https://images.unsplash.com/photo-1590381105924-c72589b9ef3f?auto=format&fit=crop&w=400&q=80',
+            },
+          },
+        }),
       });
-      const data = await res.json();
-      if (res.ok && data.configured) {
+      const latency = Date.now() - startTime;
+      if (res.ok) {
         setWorkflowStatus({
           tested: true,
           success: true,
-          latencyMs: data.latencyMs,
-          message: `Endpoint Online (${data.latencyMs || 250}ms)`,
+          latencyMs: latency,
+          message: `Direct Workflow Online (${latency}ms)`,
         });
       } else {
+        const errText = await res.text().catch(() => '');
         setWorkflowStatus({
           tested: true,
           success: false,
-          message: data.message || 'Workflow connection offline',
+          latencyMs: latency,
+          message: `Roboflow status HTTP ${res.status}: ${errText.substring(0, 60)}`,
         });
       }
     } catch (err: any) {
       setWorkflowStatus({
         tested: true,
         success: false,
-        message: err?.message || 'Network error pinging Roboflow',
+        message: err?.message || 'Direct connection offline',
       });
     } finally {
       setIsPingingWorkflow(false);
@@ -135,7 +162,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
   // Optimized Image file handler (downsamples large photos to avoid payload timeouts)
   const handleFileUpload = (file: File) => {
     if (!file.type.startsWith('image/')) {
-      setAnalysisError('Please select a valid image file (JPG, PNG, WEBP).');
+      setAnalysisError({ message: 'Please select a valid image file (JPG, PNG, WEBP).' });
       return;
     }
 
@@ -203,10 +230,10 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
     setIsSaved(false);
   };
 
-  // Execute Roboflow workflow analysis
-  const runAiAnalysis = async () => {
+  // Execute direct frontend Roboflow workflow analysis
+  const runAiAnalysis = async (forceFallback = false) => {
     if (!imagePreview) {
-      setAnalysisError('Please upload or capture a real structural photograph first.');
+      setAnalysisError({ message: 'Please upload or capture a real structural photograph first.' });
       return;
     }
 
@@ -216,44 +243,54 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
     setIsSaved(false);
 
     try {
-      setScanStep('1/4: Initializing image matrix & resolution scale...');
-      await new Promise((r) => setTimeout(r, 150));
+      if (forceFallback) {
+        setScanStep('1/3: Activating Gemini Visual Assessment fallback pipeline...');
+        const fallbackResult = await executeFallbackGeminiVisualAnalysis(
+          imagePreview,
+          selectedElement,
+          'Direct user activation or Roboflow workflow unavailable'
+        );
+        setScanStep('2/3: Computing IS 456 compliant indices and defect morphology...');
+        await new Promise((r) => setTimeout(r, 100));
+        setScanStep('3/3: Condition report synthesized.');
+        setAnalysisResult(fallbackResult);
+        if (fallbackResult.defects && fallbackResult.defects.length > 0) {
+          setSelectedDefectId(fallbackResult.defects[0].id);
+        }
+        return;
+      }
 
-      setScanStep('2/4: Calling Roboflow Serverless Workflow: building-infrastructure-defects-logic...');
+      setScanStep('1/4: Preparing image payload & Supabase storage resolution...');
+      await new Promise((r) => setTimeout(r, 100));
 
-      const effectiveBuildingCode = currentBuilding?.code || customBuildingCode || 'ASSET-01';
+      setScanStep('2/4: Calling Roboflow Workflow directly from browser (building-infrastructure-defects-logic)...');
 
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          image: imagePreview,
-          element: selectedElement,
-          buildingCode: effectiveBuildingCode,
-          locationDetails,
-        }),
-      });
+      const result = await executeFrontendRoboflowAnalysis(
+        imagePreview,
+        selectedElement,
+        user?.id || 'default_user'
+      );
 
       setScanStep('3/4: Parsing defect segmentation masks & bounding coordinates...');
-
-      if (!response.ok) {
-        const errJson = await response.json().catch(() => ({}));
-        const detailedMessage = errJson.details || errJson.message || errJson.error || 'Roboflow analysis encountered an issue. Please retry.';
-        throw new Error(detailedMessage);
-      }
-
-      const data = await response.json();
+      await new Promise((r) => setTimeout(r, 100));
 
       setScanStep('4/4: Calculating IS 456 crack aperture & Structural Health Index...');
-      await new Promise((r) => setTimeout(r, 150));
+      await new Promise((r) => setTimeout(r, 100));
 
-      setAnalysisResult(data);
-      if (data.defects && data.defects.length > 0) {
-        setSelectedDefectId(data.defects[0].id);
+      setAnalysisResult(result);
+      if (result.defects && result.defects.length > 0) {
+        setSelectedDefectId(result.defects[0].id);
       }
     } catch (err: any) {
-      console.error('Roboflow analysis failed:', err);
-      setAnalysisError(err?.message || 'Unable to analyze image. Please retry.');
+      console.error('Direct Roboflow analysis failed:', err);
+      const detailedMessage =
+        err?.message ||
+        (err?.status ? `Roboflow API returned HTTP ${err.status}` : 'Unable to connect to Roboflow workflow.');
+      setAnalysisError({
+        message: detailedMessage,
+        details: err?.rawError || err?.statusText || 'Direct client request to serverless.roboflow.com encountered an error.',
+        isRoboflowUnavailable: true,
+      });
       setAnalysisResult(null);
     } finally {
       setIsAnalyzing(false);
@@ -289,7 +326,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
       diagnosisSummary: analysisResult.diagnosisSummary,
       safetyPrecautions: analysisResult.safetyPrecautions,
       defects: analysisResult.defects,
-      originalImage: imagePreview,
+      originalImage: analysisResult.imageUrl || imagePreview,
       notes: inspectorNotes,
       createdAt: new Date().toISOString(),
     };
@@ -380,8 +417,8 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                 </span>
               </div>
               <div>
-                <span className="text-slate-400">API Key Source:</span>{' '}
-                <span className="text-emerald-300">process.env.ROBOFLOW_API_KEY (Server-Side)</span>
+                <span className="text-slate-400">Execution Mode:</span>{' '}
+                <span className="text-emerald-300">Direct Browser Fetch (Client-Side Workflow Execution)</span>
               </div>
             </div>
             <div>
@@ -694,13 +731,42 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
               </div>
             )}
 
-            {/* Error Banner */}
+            {/* Error Banner with Retry & Gemini Fallback Actions */}
             {analysisError && (
-              <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-800 flex items-start gap-2.5 animate-in fade-in duration-200">
-                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <span className="font-bold block text-red-900">Analysis Error</span>
-                  <p className="text-[11px] text-red-700 mt-0.5 leading-relaxed">{analysisError}</p>
+              <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-xs text-red-800 space-y-3 animate-in fade-in duration-200">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <span className="font-bold block text-red-950">Roboflow Inference Notice</span>
+                    <p className="text-[11px] text-red-800 mt-0.5 leading-relaxed font-mono">
+                      {analysisError.message}
+                    </p>
+                    {analysisError.details && (
+                      <p className="text-[10px] text-red-600 mt-1 italic">
+                        Detail: {analysisError.details}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-2 pt-1 border-t border-red-200/80">
+                  <button
+                    type="button"
+                    onClick={() => runAiAnalysis(false)}
+                    className="w-full sm:w-auto px-3.5 py-2 rounded-lg bg-red-700 hover:bg-red-800 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Retry Analysis</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => runAiAnalysis(true)}
+                    className="w-full sm:w-auto px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-amber-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-slate-700"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Use Gemini Visual Assessment (Fallback)</span>
+                  </button>
                 </div>
               </div>
             )}
@@ -710,18 +776,18 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
               <button
                 type="button"
                 disabled={!imagePreview || isAnalyzing}
-                onClick={runAiAnalysis}
+                onClick={() => runAiAnalysis(false)}
                 className="w-full py-3.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-900/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {isAnalyzing ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin text-amber-300" />
-                    <span>Executing Roboflow CV Workflow & IS 456 Scan...</span>
+                    <span>Analyzing Structure with Roboflow...</span>
                   </>
                 ) : (
                   <>
                     <Zap className="w-4 h-4 text-amber-300" />
-                    <span>Run Roboflow Workflow Scan</span>
+                    <span>Analyze Structure</span>
                   </>
                 )}
               </button>

@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import analyzeHandler from "./api/analyze";
 import analyzeInspectionHandler from "./api/analyze-inspection";
+import geminiFallbackHandler from "./api/gemini-fallback";
 import roboflowTestHandler from "./api/roboflow/test";
 import generateReportHandler from "./api/generate-report";
 import telemetryHandler from "./api/telemetry";
@@ -27,6 +28,7 @@ async function startServer() {
   app.get("/api/health", (req: Request, res: Response) => healthHandler(req, res));
   app.post("/api/analyze", (req: Request, res: Response) => analyzeHandler(req, res));
   app.post("/api/analyze-inspection", (req: Request, res: Response) => analyzeInspectionHandler(req, res));
+  app.post("/api/gemini-fallback", (req: Request, res: Response) => geminiFallbackHandler(req, res));
   app.post("/api/roboflow/test", (req: Request, res: Response) => roboflowTestHandler(req, res));
   app.post("/api/generate-report", (req: Request, res: Response) => generateReportHandler(req, res));
   app.get("/api/telemetry", (req: Request, res: Response) => telemetryHandler(req, res));

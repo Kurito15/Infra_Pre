@@ -90,27 +90,35 @@ export const InspectionReportModal: React.FC<InspectionReportModalProps> = ({
       console.warn('Failed to fetch Gemini report; building local deterministic report:', err);
       // Construct robust fallback report with same data
       const defects = inspection.defects || [];
-      const fallbackDefectRemediations = defects.map((d) => ({
-        detectedDefect: d.type || 'Structural Defect',
-        severity: d.severity || 'Moderate',
-        confidence: d.confidenceScore || 88,
-        location: inspection.element || 'Structural Element',
-        measurements: `Crack Width: ${d.estimatedWidthMm || 0.4}mm, Length: ${d.estimatedLengthMm || 150}mm, Coverage: 1.8%`,
-        likelyContributingFactors: [
-          'Possible contributing factor: localized stress concentration exceeding tensile strength.',
-          'Possible contributing factor: cyclic dynamic ambient vibration and thermal fluctuations.',
-        ],
-        recommendedCorrectiveAction:
-          d.severity === 'Critical' || d.severity === 'High'
-            ? 'Potential corrective measure: Recommended for professional assessment by a qualified structural engineer before repair. Low-to-high pressure epoxy resin injection grouting per IS 456 Annex H.'
-            : 'Potential corrective measure: Professional crack assessment and surface elastomeric sealing appropriate to crack characteristics.',
-        recommendedPreventiveAction:
-          'Potential preventive measure: Install calibrated tell-tale displacement gauges for periodic monitoring and apply elastomeric protective coating.',
-        inspectionPriority:
-          d.severity === 'Critical'
-            ? 'CRITICAL (24-48 Hours) - Assessment by a qualified structural engineer is explicitly recommended before repair.'
-            : 'SCHEDULED (14-30 Days) - Recommended for routine engineering assessment.',
-      }));
+      const fallbackDefectRemediations = defects.map((d: any) => {
+        const dType = d.defectType || d.type || 'Structural Defect';
+        const dConf = d.confidence || d.confidenceScore || 88;
+        const dWidth = d.metrics?.crackWidthMm || d.estimatedWidthMm || 0.4;
+        const dLength = d.metrics?.crackLengthMm || d.estimatedLengthMm || 150;
+        const dCoverage = d.metrics?.areaCoveragePercent || 1.8;
+
+        return {
+          detectedDefect: dType,
+          severity: d.severity || 'Moderate',
+          confidence: dConf,
+          location: d.location || inspection.element || 'Structural Element',
+          measurements: `Crack Width: ${dWidth}mm, Length: ${dLength}mm, Coverage: ${dCoverage}%`,
+          likelyContributingFactors: [
+            'Possible contributing factor: localized stress concentration exceeding concrete tensile strength.',
+            'Possible contributing factor: cyclic dynamic ambient vibration and thermal fluctuations.',
+          ],
+          recommendedCorrectiveAction:
+            d.severity === 'Critical' || d.severity === 'High'
+              ? 'Potential corrective measure: Recommended for professional assessment by a qualified structural engineer before repair. Low-to-high pressure epoxy resin injection grouting per IS 456 Annex H.'
+              : 'Potential corrective measure: Professional crack assessment and surface elastomeric sealing appropriate to crack characteristics.',
+          recommendedPreventiveAction:
+            'Potential preventive measure: Install calibrated tell-tale displacement gauges for periodic monitoring and apply elastomeric protective coating.',
+          inspectionPriority:
+            d.severity === 'Critical'
+              ? 'CRITICAL (24-48 Hours) - Assessment by a qualified structural engineer is explicitly recommended before repair.'
+              : 'SCHEDULED (14-30 Days) - Recommended for routine engineering assessment.',
+        };
+      });
 
       const fallbackImmediate =
         inspection.overallRiskLevel === 'Critical'
@@ -176,14 +184,14 @@ export const InspectionReportModal: React.FC<InspectionReportModalProps> = ({
             { sensor: 'Crack Displacement', value: '1.85mm', status: 'Elevated' },
           ],
         },
-        detectedDefects: (inspection.defects || []).map((d) => ({
-          type: d.type || 'Structural Defect',
+        detectedDefects: (inspection.defects || []).map((d: any) => ({
+          type: d.defectType || d.type || 'Structural Defect',
           severity: d.severity || 'Moderate',
-          confidence: d.confidenceScore || 88,
-          crackWidthMm: d.estimatedWidthMm || 0.4,
-          crackLengthMm: d.estimatedLengthMm || 150,
-          coveragePercent: 1.8,
-          compliance: d.standardsReference || 'IS 456:2000 Clause 35.3.2',
+          confidence: d.confidence || d.confidenceScore || 88,
+          crackWidthMm: d.metrics?.crackWidthMm || d.estimatedWidthMm || 0.4,
+          crackLengthMm: d.metrics?.crackLengthMm || d.estimatedLengthMm || 150,
+          coveragePercent: d.metrics?.areaCoveragePercent || 1.8,
+          compliance: d.is456Compliance || d.standardsReference || 'IS 456:2000 Clause 35.3.2',
           remediation: d.remediationProtocol || 'Low-pressure epoxy resin injection grouting.',
         })),
         defectRemediations: fallbackDefectRemediations,
