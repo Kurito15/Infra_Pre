@@ -7,7 +7,6 @@ import {
   executeFrontendRoboflowAnalysis,
   executeFallbackGeminiVisualAnalysis,
   ROBOFLOW_WORKFLOW_URL,
-  ROBOFLOW_API_KEY,
 } from '../../lib/roboflowClient';
 import confetti from 'canvas-confetti';
 import {
@@ -77,7 +76,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
   }>({
     tested: false,
     success: true,
-    message: 'Direct Browser Workflow Online',
+    message: 'Server-Side Proxy Active',
   });
   const [showWorkflowDetails, setShowWorkflowDetails] = useState<boolean>(false);
   const [showRawJson, setShowRawJson] = useState<boolean>(false);
@@ -112,47 +111,39 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
 
   const currentBuilding = buildings.find((b) => b.id === selectedBuildingId) || buildings[0];
 
-  // Test Roboflow Workflow endpoint directly from browser
+  // Test server-side Roboflow proxy endpoint
   const pingRoboflowWorkflow = async () => {
     setIsPingingWorkflow(true);
     const startTime = Date.now();
     try {
-      // Direct ping to Roboflow workflow URL
-      const res = await fetch(ROBOFLOW_WORKFLOW_URL, {
+      // Call server-side test endpoint
+      const res = await fetch('/api/roboflow/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          api_key: ROBOFLOW_API_KEY,
-          inputs: {
-            image: {
-              type: 'url',
-              value: 'https://images.unsplash.com/photo-1590381105924-c72589b9ef3f?auto=format&fit=crop&w=400&q=80',
-            },
-          },
-        }),
       });
       const latency = Date.now() - startTime;
-      if (res.ok) {
+      const data = await res.json();
+      
+      if (res.ok && data.status === 'online') {
         setWorkflowStatus({
           tested: true,
           success: true,
           latencyMs: latency,
-          message: `Direct Workflow Online (${latency}ms)`,
+          message: `Server Proxy Online (${latency}ms)`,
         });
       } else {
-        const errText = await res.text().catch(() => '');
         setWorkflowStatus({
           tested: true,
           success: false,
           latencyMs: latency,
-          message: `Roboflow status HTTP ${res.status}: ${errText.substring(0, 60)}`,
+          message: `Server health check returned: ${data.status || 'unknown'}`,
         });
       }
     } catch (err: any) {
       setWorkflowStatus({
         tested: true,
         success: false,
-        message: err?.message || 'Direct connection offline',
+        message: err?.message || 'Server proxy connection offline',
       });
     } finally {
       setIsPingingWorkflow(false);
@@ -230,7 +221,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
     setIsSaved(false);
   };
 
-  // Execute direct frontend Roboflow workflow analysis
+  // Execute server-side Roboflow analysis via proxy
   const runAiAnalysis = async (forceFallback = false) => {
     if (!imagePreview) {
       setAnalysisError({ message: 'Please upload or capture a real structural photograph first.' });
@@ -260,10 +251,10 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
         return;
       }
 
-      setScanStep('1/4: Preparing image payload & Supabase storage resolution...');
+      setScanStep('1/4: Preparing image payload and uploading to secure storage...');
       await new Promise((r) => setTimeout(r, 100));
 
-      setScanStep('2/4: Calling Roboflow Workflow directly from browser (building-infrastructure-defects-logic)...');
+      setScanStep('2/4: Calling Roboflow Workflow via server-side proxy (/api/roboflow/proxy)...');
 
       const result = await executeFrontendRoboflowAnalysis(
         imagePreview,
@@ -282,13 +273,13 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
         setSelectedDefectId(result.defects[0].id);
       }
     } catch (err: any) {
-      console.error('Direct Roboflow analysis failed:', err);
+      console.error('Analysis failed:', err);
       const detailedMessage =
         err?.message ||
-        (err?.status ? `Roboflow API returned HTTP ${err.status}` : 'Unable to connect to Roboflow workflow.');
+        (err?.status ? `Server proxy returned HTTP ${err.status}` : 'Unable to connect to analysis service.');
       setAnalysisError({
         message: detailedMessage,
-        details: err?.rawError || err?.statusText || 'Direct client request to serverless.roboflow.com encountered an error.',
+        details: err?.rawError || err?.statusText || 'The server-side proxy encountered an issue. Please try again.',
         isRoboflowUnavailable: true,
       });
       setAnalysisResult(null);
@@ -357,7 +348,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
             </span>
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Upload real structural member photographs to execute serverless Roboflow segmentation and compute IS 456 crack indices.
+            Upload real structural member photographs to execute serverless Roboflow segmentation via secure server proxy and compute IS 456 crack indices.
           </p>
         </div>
       </div>
@@ -372,15 +363,15 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-bold text-white tracking-wide">
-                  Roboflow Serverless Inference Engine
+                  Roboflow Serverless Inference Engine (Server-Side Proxy)
                 </span>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                  {workflowStatus.message || 'Workflow Ready'}
+                  {workflowStatus.message || 'Proxy Ready'}
                 </span>
               </div>
               <p className="text-[11px] text-slate-300 font-mono mt-0.5 truncate max-w-xl">
-                kumar-ritovash/workflows/building-infrastructure-defects-logic
+                /api/roboflow/proxy • kumar-ritovash/workflows/building-infrastructure-defects-logic
               </p>
             </div>
           </div>
@@ -411,14 +402,14 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
           <div className="mt-3 pt-3 border-t border-slate-800 text-xs space-y-2 font-mono">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
               <div>
-                <span className="text-slate-400">Endpoint:</span>{' '}
+                <span className="text-slate-400">Server Proxy Endpoint:</span>{' '}
                 <span className="text-blue-300 break-all">
-                  https://serverless.roboflow.com/kumar-ritovash/workflows/building-infrastructure-defects-logic
+                  /api/roboflow/proxy
                 </span>
               </div>
               <div>
                 <span className="text-slate-400">Execution Mode:</span>{' '}
-                <span className="text-emerald-300">Direct Browser Fetch (Client-Side Workflow Execution)</span>
+                <span className="text-emerald-300">Server-Side Secure Proxy (No CORS Issues)</span>
               </div>
             </div>
             <div>
@@ -737,7 +728,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                 <div className="flex items-start gap-2.5">
                   <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <span className="font-bold block text-red-950">Roboflow Inference Notice</span>
+                    <span className="font-bold block text-red-950">Analysis Service Notice</span>
                     <p className="text-[11px] text-red-800 mt-0.5 leading-relaxed font-mono">
                       {analysisError.message}
                     </p>
@@ -762,7 +753,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                   <button
                     type="button"
                     onClick={() => runAiAnalysis(true)}
-                    className="w-full sm:w-auto px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-amber-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-slate-700"
+                    className="w-full sm:w-auto px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-amber-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                     <span>Use Gemini Visual Assessment (Fallback)</span>
@@ -782,7 +773,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                 {isAnalyzing ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin text-amber-300" />
-                    <span>Analyzing Structure with Roboflow...</span>
+                    <span>Analyzing Structure...</span>
                   </>
                 ) : (
                   <>
@@ -803,7 +794,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
               <div className="flex items-center justify-between text-xs font-mono">
                 <span className="text-amber-400 font-bold flex items-center gap-2">
                   <Cpu className="w-4 h-4 animate-spin text-amber-400" />
-                  Roboflow Serverless Inference Active
+                  Server-Side Analysis Active
                 </span>
                 <span className="text-slate-400">Workflow: building-infrastructure-defects-logic</span>
               </div>
@@ -1005,7 +996,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                         onClick={() => {
                           if (savedInspection) onViewReport(savedInspection);
                         }}
-                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
                       >
                         <FileCheck className="w-4 h-4" />
                         <span>View Certificate & AI Report</span>
@@ -1014,7 +1005,7 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setActiveTab('buildings')}
-                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
                       >
                         <span>Building Assets</span>
                         <ArrowRight className="w-3.5 h-3.5" />
