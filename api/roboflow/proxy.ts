@@ -28,27 +28,32 @@ export default async function handler(req: any, res: any) {
     }
   }
 
+  // Extract only image or imageUrl - ignore other metadata parameters
   const { image, imageUrl } = body || {};
   const target = image || imageUrl;
 
   if (!target || typeof target !== 'string') {
-    return res.status(400).json({ error: 'No image or imageUrl provided. Provide a base64 data URL or a public HTTPS image URL.' });
+    return res.status(400).json({ 
+      error: 'No image or imageUrl provided. Provide a base64 data URL or a public HTTPS image URL.',
+      received: { image: !!image, imageUrl: !!imageUrl }
+    });
   }
 
   try {
-    // Build payload
+    // Build payload for Roboflow
     let payload: any = null;
     const cleanInput = target.trim();
 
     if (cleanInput.startsWith('http://') || cleanInput.startsWith('https://')) {
-      // Tell Roboflow to fetch URL directly
+      // URL-based image
       payload = {
         api_key: apiKey,
         inputs: {
           image: { type: 'url', value: cleanInput },
         },
       };
-    } else {
+    } else if (cleanInput.startsWith('data:')) {
+      // Base64-encoded image
       let cleanBase64 = cleanInput;
       if (cleanBase64.includes('base64,')) {
         cleanBase64 = cleanBase64.split('base64,')[1].trim();
@@ -62,11 +67,19 @@ export default async function handler(req: any, res: any) {
           image: { type: 'base64', value: cleanBase64 },
         },
       };
+    } else {
+      // Assume it's base64 without data URI prefix
+      payload = {
+        api_key: apiKey,
+        inputs: {
+          image: { type: 'base64', value: cleanInput },
+        },
+      };
     }
 
     // Use AbortController for timeout
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timeoutMs = 12000; // 12s
+    const timeoutMs = 30000; // 30s timeout for image processing
     let timeoutId: NodeJS.Timeout | null = null;
     if (controller) timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
