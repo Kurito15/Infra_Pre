@@ -8,6 +8,13 @@ import {
   executeFallbackGeminiVisualAnalysis,
   ROBOFLOW_WORKFLOW_URL,
 } from '../../lib/roboflowClient';
+import {
+  getResearchRun,
+  researchDefect,
+  type ResearchRequest,
+  type ResearchRunSnapshot,
+  type ResearchTopic,
+} from '../../lib/tinyfish';
 import confetti from 'canvas-confetti';
 import {
   UploadCloud,
@@ -32,37 +39,70 @@ import {
   Building2,
   Sparkles,
 } from 'lucide-react';
-import {
-  researchDefect,
-  type ResearchTopic,
-} from "../../lib/tinyfish";
+
 const toResearchDefectType = (raw: string): string | null => {
-  const value = raw.toLowerCase().replace(/[_-]+/g, " ");
-
-  if (/\bcrack\b/.test(value)) return "crack";
-  if (/\bspall(ing)?\b/.test(value)) return "spalling";
-  if (/\bcorrosion\b/.test(value)) return "corrosion";
-  if (/\befflorescence\b/.test(value)) return "efflorescence";
-  if (/\bexposed rebar\b/.test(value)) return "exposed rebar";
-
-  // Do not silently label unsupported defect classes as another defect.
+  const value = raw.toLowerCase().replace(/[_-]+/g, ' ');
+  if (/\bcrack\b/.test(value)) return 'crack';
+  if (/\bspall(ing)?\b/.test(value)) return 'spalling';
+  if (/\bcorrosion\b/.test(value)) return 'corrosion';
+  if (/\befflorescence\b/.test(value)) return 'efflorescence';
+  if (/\bexposed rebar\b/.test(value)) return 'exposed rebar';
   return null;
 };
 
 const toResearchElement = (raw: string): string | undefined => {
   const value = raw.toLowerCase();
-
-  if (/\bcolumn\b/.test(value)) return "column";
-  if (/\bbeam\b/.test(value)) return "beam";
-  if (/\bslab\b/.test(value)) return "slab";
-  if (/\bwall\b/.test(value)) return "wall";
-  if (/\bfoundation\b/.test(value)) return "foundation";
-  if (/\bfooting\b/.test(value)) return "footing";
-
-  // If no recognized element is found, the backend uses its RCC member default.
+  if (/\bcolumn\b/.test(value)) return 'column';
+  if (/\bbeam\b/.test(value)) return 'beam';
+  if (/\bslab\b/.test(value)) return 'slab';
+  if (/\bwall\b/.test(value)) return 'wall';
+  if (/\bfoundation\b/.test(value)) return 'foundation';
+  if (/\bfooting\b/.test(value)) return 'footing';
   return undefined;
 };
 
+interface CachedResearchResult {
+  savedAt: string;
+  result: unknown;
+  note?: string;
+}
+
+const researchCacheKey = (request: ResearchRequest) =>
+  `shokha-tinyfish-cache-v1:${encodeURIComponent(
+    [request.topic, request.defectType, request.element || '', request.location || '']
+      .join('|')
+      .toLowerCase()
+  )}`;
+
+const readResearchCache = (request: ResearchRequest): CachedResearchResult | null => {
+  try {
+    const raw = window.localStorage.getItem(researchCacheKey(request));
+    if (!raw) return null;
+    const cached = JSON.parse(raw) as CachedResearchResult;
+    const savedAt = Date.parse(cached.savedAt);
+    const maxAge = request.topic === 'material_rates'
+      ? 24 * 60 * 60 * 1000
+      : 14 * 24 * 60 * 60 * 1000;
+    if (!Number.isFinite(savedAt) || Date.now() - savedAt > maxAge || !cached.result) {
+      return null;
+    }
+    return cached;
+  } catch {
+    return null;
+  }
+};
+
+const writeResearchCache = (request: ResearchRequest, snapshot: ResearchRunSnapshot) => {
+  if (snapshot.status !== 'COMPLETED' || snapshot.error || !snapshot.result) return;
+  try {
+    window.localStorage.setItem(
+      researchCacheKey(request),
+      JSON.stringify({ savedAt: new Date().toISOString(), result: snapshot.result, note: snapshot.note })
+    );
+  } catch {
+    // Research remains usable if browser storage is unavailable or full.
+  }
+};
 
 interface NewInspectionViewProps {
   buildings: Building[];
@@ -139,24 +179,23 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
   } | null>(null);
 
   const [selectedDefectId, setSelectedDefectId] = useState<string | null>(null);
+  const [researchTopic, setResearchTopic] = useState<ResearchTopic>('repair_guidance');
+  const [isResearching, setIsResearching] = useState(false);
+  const [researchError, setResearchError] = useState<string | null>(null);
+  const [researchResponse, setResearchResponse] = useState<ResearchRunSnapshot | null>(null);
+  const [researchRunId, setResearchRunId] = useState<string | null>(null);
+  const [researchRunToken, setResearchRunToken] = useState<string | null>(null);
+  const [researchRequestForRun, setResearchRequestForRun] = useState<ResearchRequest | null>(null);
+  const [researchForDefectId, setResearchForDefectId] = useState<string | null>(null);
+  const [researchCachedAt, setResearchCachedAt] = useState<string | null>(null);
   const [isSaved, setIsSaved] = useState<boolean>(false);
   const [savedInspection, setSavedInspection] = useState<Inspection | null>(null);
 
   const currentBuilding = buildings.find((b) => b.id === selectedBuildingId) || buildings[0];
-    const selectedDefect =
+  const selectedDefect =
     analysisResult?.defects.find((defect) => defect.id === selectedDefectId) ??
     analysisResult?.defects[0] ??
     null;
-
-    const [researchTopic, setResearchTopic] =
-    useState<ResearchTopic>("repair_guidance");
-  const [isResearching, setIsResearching] = useState(false);
-  const [researchError, setResearchError] = useState<string | null>(null);
-  const [researchResponse, setResearchResponse] =
-    useState<Awaited<ReturnType<typeof researchDefect>> | null>(null);
-  const [researchForDefectId, setResearchForDefectId] =
-    useState<string | null>(null);
-
 
   // Test server-side Roboflow proxy endpoint
   const pingRoboflowWorkflow = async () => {
@@ -435,61 +474,112 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
       setScanStep('');
     }
   };
-    const handleResearchSelectedDefect = async () => {
+
+  const pollResearchRun = async (
+    runId: string,
+    runToken: string,
+    request: ResearchRequest
+  ) => {
+    const deadline = Date.now() + 3 * 60 * 1000;
+
+    while (Date.now() < deadline) {
+      const snapshot = await getResearchRun(runId, runToken);
+      setResearchResponse(snapshot);
+
+      if (snapshot.status === 'COMPLETED') {
+        if (snapshot.error || !snapshot.result) {
+          throw new Error(snapshot.error?.message || 'TinyFish completed without a result.');
+        }
+        writeResearchCache(request, snapshot);
+        setResearchCachedAt(null);
+        setResearchError(null);
+        return;
+      }
+
+      if (['FAILED', 'CANCELLED', 'TIMED_OUT'].includes(snapshot.status)) {
+        throw new Error(snapshot.error?.message || `TinyFish run ${snapshot.status}.`);
+      }
+
+      if (!['PENDING', 'RUNNING'].includes(snapshot.status)) {
+        throw new Error(`Unexpected TinyFish run status: ${snapshot.status}.`);
+      }
+
+      await new Promise<void>((resolve) => setTimeout(resolve, 2500));
+    }
+
+    setResearchError('Research is still running. Use Check status to resume polling.');
+  };
+
+  const handleResearchSelectedDefect = async () => {
     if (!selectedDefect) {
-      setResearchError("Run an inspection and select a defect first.");
+      setResearchError('Run an inspection and select a detected defect first.');
       return;
     }
 
     const defectType = toResearchDefectType(selectedDefect.type);
     if (!defectType) {
-      setResearchError(
-        `Research is not configured for "${selectedDefect.type}".`
-      );
+      setResearchError(`Research is not configured for "${selectedDefect.type}".`);
       return;
     }
 
     setIsResearching(true);
     setResearchError(null);
     setResearchResponse(null);
-    setResearchForDefectId(null);
+    setResearchCachedAt(null);
+    setResearchForDefectId(selectedDefect.id);
+
+    const request: ResearchRequest = {
+      topic: researchTopic,
+      defectType,
+      element: toResearchElement(selectedElement),
+      location: researchTopic === 'material_rates' ? currentBuilding?.city : undefined,
+    };
+    setResearchRequestForRun(request);
 
     try {
-      const response = await researchDefect({
-        topic: researchTopic,
-        defectType,
-        element: toResearchElement(selectedElement),
-        location:
-          researchTopic === "material_rates"
-            ? currentBuilding?.city
-            : undefined,
-      });
+      const started = await researchDefect(request);
 
-      // The supplied backend currently needs a fix to return failures correctly.
-      // This check prevents the UI treating a failed run as a success.
-      if (
-        response.ok !== true ||
-        response.status !== "COMPLETED" ||
-        !response.result
-      ) {
-        throw new Error(
-          `Research did not complete successfully (status: ${
-            response.status ?? "unknown"
-          }).`
-        );
+      if (!started.runId || !started.runAccessToken) {
+        throw new Error('The server did not return the run details needed to poll TinyFish.');
       }
 
-      setResearchResponse(response);
-      setResearchForDefectId(selectedDefect.id);
+      setResearchRunId(started.runId);
+      setResearchRunToken(started.runAccessToken);
+      setResearchResponse(started);
+      await pollResearchRun(started.runId, started.runAccessToken, request);
     } catch (error) {
-      setResearchError(
-        error instanceof Error ? error.message : "TinyFish research failed."
-      );
+      const cached = readResearchCache(request);
+      if (cached) {
+        setResearchResponse({
+          ok: true,
+          runId: 'cached',
+          status: 'CACHED',
+          result: cached.result,
+          error: null,
+          note: cached.note || 'Saved result; verify the sources and date before use.',
+        });
+        setResearchCachedAt(cached.savedAt);
+        setResearchError(null);
+      } else {
+        setResearchError(error instanceof Error ? error.message : 'TinyFish research failed.');
+      }
     } finally {
       setIsResearching(false);
     }
   };
 
+  const handleCheckResearchStatus = async () => {
+    if (!researchRunId || !researchRunToken || !researchRequestForRun) return;
+    setIsResearching(true);
+    setResearchError(null);
+    try {
+      await pollResearchRun(researchRunId, researchRunToken, researchRequestForRun);
+    } catch (error) {
+      setResearchError(error instanceof Error ? error.message : 'TinyFish status check failed.');
+    } finally {
+      setIsResearching(false);
+    }
+  };
 
   // Save inspection to Supabase
   const handleSaveInspection = () => {
@@ -1194,26 +1284,22 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                   ))}
                 </div>
               )}
+
               {analysisResult && selectedDefect && (
                 <section className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
                   <div>
-                    <h3 className="font-bold text-sm text-slate-900">
-                      Reference Research
-                    </h3>
+                    <h3 className="font-bold text-sm text-slate-900">Reference Research</h3>
                     <p className="text-xs text-slate-500 mt-1">
-                      Research for{" "}
-                      <strong>{selectedDefect.type}</strong>. Verify standards,
-                      repair advice, and prices against authoritative sources
-                      and with a qualified professional.
+                      Research for <strong>{selectedDefect.type}</strong>. Verify standards, repair
+                      advice, and prices against authoritative sources and with a qualified
+                      professional.
                     </p>
                   </div>
 
                   <div className="flex flex-col sm:flex-row gap-2">
                     <select
                       value={researchTopic}
-                      onChange={(event) =>
-                        setResearchTopic(event.target.value as ResearchTopic)
-                      }
+                      onChange={(event) => setResearchTopic(event.target.value as ResearchTopic)}
                       disabled={isResearching}
                       aria-label="Research type"
                       className="px-3 py-2 rounded-lg border border-slate-300 text-sm"
@@ -1222,31 +1308,47 @@ export const NewInspectionView: React.FC<NewInspectionViewProps> = ({
                       <option value="code_lookup">Code lookup</option>
                       <option value="material_rates">Material rates</option>
                     </select>
-
                     <button
                       type="button"
                       onClick={() => void handleResearchSelectedDefect()}
-                      disabled={isResearching}
+                      disabled={
+                        isResearching ||
+                        ['PENDING', 'RUNNING'].includes(researchResponse?.status ?? '')
+                      }
                       className="px-4 py-2 rounded-lg bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
                     >
-                      {isResearching
-                        ? "Researching…"
-                        : "Research selected defect"}
+                      {isResearching ? 'Researching…' : 'Research selected defect'}
                     </button>
+                    {researchRunId &&
+                      researchRunToken &&
+                      ['PENDING', 'RUNNING'].includes(researchResponse?.status ?? '') &&
+                      !isResearching && (
+                        <button
+                          type="button"
+                          onClick={() => void handleCheckResearchStatus()}
+                          className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-semibold"
+                        >
+                          Check status
+                        </button>
+                      )}
                   </div>
 
-                  {researchError && (
-                    <p role="alert" className="text-sm text-red-700">
-                      {researchError}
+                  {researchResponse && ['PENDING', 'RUNNING'].includes(researchResponse.status) && (
+                    <p role="status" className="text-sm text-blue-700">
+                      TinyFish status: {researchResponse.status}. The result will appear when complete.
                     </p>
                   )}
-
-                  {researchResponse &&
-                    researchForDefectId === selectedDefect.id && (
+                  {researchError && <p role="alert" className="text-sm text-red-700">{researchError}</p>}
+                  {(researchResponse?.status === 'COMPLETED' || researchResponse?.status === 'CACHED') &&
+                    researchForDefectId === selectedDefect.id &&
+                    researchResponse.result && (
                       <div aria-live="polite">
-                        <p className="text-xs text-slate-600">
-                          {researchResponse.note}
-                        </p>
+                        {researchResponse.status === 'CACHED' && (
+                          <p className="mb-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
+                            Showing saved research from {researchCachedAt ? new Date(researchCachedAt).toLocaleString() : 'an earlier run'} because the live request failed. This is not live data; verify sources and dates.
+                          </p>
+                        )}
+                        <p className="text-xs text-slate-600">{researchResponse.note}</p>
                         <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-3 text-xs text-slate-100">
                           {JSON.stringify(researchResponse.result, null, 2)}
                         </pre>
