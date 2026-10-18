@@ -1,6 +1,5 @@
 import express, { Request, Response } from "express";
 import path from "path";
-import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import analyzeHandler from "./api/analyze";
@@ -11,11 +10,9 @@ import roboflowProxyHandler from "./api/roboflow/proxy";
 import generateReportHandler from "./api/generate-report";
 import telemetryHandler from "./api/telemetry";
 import healthHandler from "./api/health";
+import tinyFishResearchHandler from "./api/tinyfish-research";
 
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
@@ -35,6 +32,11 @@ async function startServer() {
   app.post("/api/generate-report", (req: Request, res: Response) => generateReportHandler(req, res));
   app.get("/api/telemetry", (req: Request, res: Response) => telemetryHandler(req, res));
   app.post("/api/telemetry", (req: Request, res: Response) => telemetryHandler(req, res));
+  const tinyFishRoute = (req: Request, res: Response, next: (err?: any) => void) => {
+    void tinyFishResearchHandler(req, res).catch(next);
+  };
+  app.post("/api/tinyfish-research", tinyFishRoute);
+  app.get("/api/tinyfish-research", tinyFishRoute);
 
   // In development, hook into Vite development server
   if (process.env.NODE_ENV !== "production") {
